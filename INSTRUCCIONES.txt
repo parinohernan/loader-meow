@@ -1,0 +1,146 @@
+==================================================
+  LOADER MEOW - CLIENTE WHATSAPP DESKTOP
+  INSTRUCCIONES DE CONFIGURACIÓN
+==================================================
+
+PASO 1: INSTALAR DEPENDENCIAS DE GO
+------------------------------------
+1. Abre PowerShell en esta carpeta
+2. Ejecuta: setup.bat
+   (O manualmente: go mod download && go mod tidy)
+
+
+PASO 2: INSTALAR WAILS CLI
+---------------------------
+go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+
+PASO 3: INSTALAR GCC (REQUERIDO PARA SQLITE3)
+----------------------------------------------
+Windows:
+  OPCIÓN 1 (Recomendada) - TDM-GCC:
+    1. Descarga: https://jmeubank.github.io/tdm-gcc/download/
+    2. Instala TDM-GCC 
+    3. Durante instalación, marca "Add to PATH"
+    4. Reinicia la terminal después de instalar
+
+  OPCIÓN 2 - MinGW-w64:
+    1. Descarga: https://www.mingw-w64.org/downloads/
+    2. Instala y agrega manualmente al PATH
+
+  Para verificar la instalación:
+    gcc --version
+
+macOS:
+  - Ya incluido con Xcode Command Line Tools
+
+Linux:
+  - sudo apt install build-essential
+
+
+PASO 3B: CONFIGURAR CGO (MUY IMPORTANTE)
+-----------------------------------------
+Ejecuta el script de configuración:
+  setup-cgo.bat
+
+Este script:
+  - Verifica que GCC esté instalado
+  - Configura CGO_ENABLED=1
+  - Descarga las dependencias
+  - Limpia el cache de Wails
+
+
+PASO 4: EJECUTAR LA APLICACIÓN
+-------------------------------
+
+IMPORTANTE: Debes usar los scripts especiales que habilitan CGO:
+
+OPCIÓN A - Modo Desarrollo (con hot-reload):
+  run-with-cgo.bat
+  
+  (Esto ejecuta: set CGO_ENABLED=1 && wails dev)
+
+OPCIÓN B - Compilar para Producción:
+  build-with-cgo.bat
+  
+  El ejecutable estará en: build\bin\loader-meow.exe
+
+NOTA: NO uses "wails dev" directamente, siempre usa run-with-cgo.bat
+
+
+PASO 5: CONECTAR WHATSAPP
+--------------------------
+1. Inicia la aplicación
+2. Haz clic en "Conectar WhatsApp"
+3. Escanea el código QR con tu WhatsApp móvil:
+   - Abre WhatsApp en tu teléfono
+   - Ve a: Configuración > Dispositivos vinculados
+   - Toca: Vincular un dispositivo
+   - Escanea el QR que aparece en la app
+
+4. ¡Listo! Ya puedes ver y enviar mensajes
+
+
+SOLUCIÓN DE PROBLEMAS
+----------------------
+
+Error: "WebView2 no encontrado"
+  → Descarga WebView2 Runtime desde:
+    https://developer.microsoft.com/microsoft-edge/webview2/
+
+Error: "gcc: command not found" o "CGO_ENABLED=0"
+  → Instala GCC (ver PASO 3)
+  → Ejecuta: setup-cgo.bat
+  → Usa: run-with-cgo.bat (NO "wails dev" directamente)
+
+Error: "wails: command not found"
+  → Verifica que $GOPATH/bin esté en tu PATH
+  → O ejecuta: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+Error de conexión a WhatsApp
+  → Verifica tu conexión a internet
+  → Elimina la carpeta store/ y vuelve a escanear el QR
+
+Los mensajes no se actualizan
+  → Haz clic en el botón refrescar (🔄) en la lista de chats
+
+
+CARACTERÍSTICAS DE LA APP
+--------------------------
+✓ Conexión con WhatsApp Web (con QR)
+✓ Lista de chats en tiempo real
+✓ Ver mensajes de cualquier chat
+✓ Enviar mensajes de texto
+✓ Almacenamiento local con SQLite
+✓ Interfaz oscura moderna
+✓ Sincronización automática
+
+
+ARCHIVOS Y CARPETAS
+-------------------
+main.go              - Punto de entrada de Wails
+app.go               - Lógica de la aplicación
+whatsapp_service.go  - Servicio de WhatsApp
+frontend/dist/       - Interfaz de usuario
+store/               - Datos locales (sesión y mensajes)
+build/bin/           - Ejecutables compilados
+
+
+RECURSOS ADICIONALES
+---------------------
+- README.md: Documentación completa
+- Wails Docs: https://wails.io/docs/introduction
+- whatsmeow: https://github.com/tulir/whatsmeow
+- Go Docs: https://go.dev/doc/
+
+
+PRIVACIDAD
+----------
+- Todos los datos se almacenan localmente
+- Sin servidores externos
+- Conexión directa a WhatsApp
+- Tu sesión está encriptada
+
+
+¡Disfruta de Loader Meow! 🐱📱
+Tu cliente de WhatsApp de escritorio

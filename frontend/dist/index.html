@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Loader Meow - WhatsApp Desktop</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Oxygen, Ubuntu, Cantarell, sans-serif;
+        background: #111b21;
+        height: 100vh;
+        overflow: hidden;
+      }
+
+      .app-container {
+        display: flex;
+        height: 100vh;
+      }
+
+      /* Panel de conexión/QR */
+      .connection-panel {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: #111b21;
+        color: white;
+      }
+
+      .connection-panel h1 {
+        font-size: 28px;
+        margin-bottom: 20px;
+        color: #25d366;
+      }
+
+      .connection-panel p {
+        font-size: 16px;
+        margin-bottom: 30px;
+        opacity: 0.8;
+      }
+
+      .qr-container {
+        background: white;
+        padding: 40px;
+        border-radius: 20px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+      }
+
+      #qrCode {
+        width: 300px;
+        height: 300px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        color: #666;
+      }
+
+      .connect-btn {
+        padding: 15px 40px;
+        background: #25d366;
+        color: white;
+        border: none;
+        border-radius: 30px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+      }
+
+      .connect-btn:hover {
+        background: #20c05c;
+        transform: translateY(-2px);
+        box-shadow: 0 5px 20px rgba(37, 211, 102, 0.4);
+      }
+
+      .loading {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border: 3px solid rgba(255, 255, 255, 0.3);
+        border-radius: 50%;
+        border-top-color: white;
+        animation: spin 1s ease-in-out infinite;
+        margin-right: 10px;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      /* Sidebar de chats */
+      .sidebar {
+        width: 350px;
+        background: #111b21;
+        border-right: 1px solid #2a3942;
+        display: flex;
+        flex-direction: column;
+        display: none;
+      }
+
+      .sidebar.active {
+        display: flex;
+      }
+
+      .sidebar-header {
+        padding: 15px 20px;
+        background: #202c33;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .sidebar-header h2 {
+        color: #e9edef;
+        font-size: 18px;
+      }
+
+      .refresh-btn {
+        background: transparent;
+        border: none;
+        color: #aebac1;
+        font-size: 20px;
+        cursor: pointer;
+        padding: 5px 10px;
+      }
+
+      .refresh-btn:hover {
+        color: #25d366;
+      }
+
+      .chats-list {
+        flex: 1;
+        overflow-y: auto;
+      }
+
+      .chat-item {
+        padding: 15px 20px;
+        background: #111b21;
+        border-bottom: 1px solid #2a3942;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+
+      .chat-item:hover {
+        background: #202c33;
+      }
+
+      .chat-item.active {
+        background: #2a3942;
+      }
+
+      .chat-name {
+        color: #e9edef;
+        font-weight: 500;
+        font-size: 16px;
+        margin-bottom: 5px;
+      }
+
+      .chat-last-message {
+        color: #8696a0;
+        font-size: 14px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .chat-time {
+        color: #8696a0;
+        font-size: 12px;
+        float: right;
+      }
+
+      /* Panel de mensajes */
+      .messages-panel {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        background: #0b141a;
+        display: none;
+      }
+
+      .messages-panel.active {
+        display: flex;
+      }
+
+      .messages-header {
+        padding: 15px 20px;
+        background: #202c33;
+        color: #e9edef;
+        display: flex;
+        align-items: center;
+        gap: 15px;
+      }
+
+      .messages-header h3 {
+        font-size: 18px;
+      }
+
+      .back-btn {
+        background: transparent;
+        border: none;
+        color: #e9edef;
+        font-size: 24px;
+        cursor: pointer;
+        padding: 5px;
+      }
+
+      .messages-container {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px;
+        background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect fill="%23111b21" width="100" height="100"/></svg>');
+      }
+
+      .message {
+        display: flex;
+        margin-bottom: 10px;
+        animation: fadeIn 0.3s;
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .message.outgoing {
+        justify-content: flex-end;
+      }
+
+      .message-bubble {
+        max-width: 65%;
+        padding: 8px 12px;
+        border-radius: 8px;
+        position: relative;
+      }
+
+      .message.incoming .message-bubble {
+        background: #202c33;
+        color: #e9edef;
+      }
+
+      .message.outgoing .message-bubble {
+        background: #005c4b;
+        color: #e9edef;
+      }
+
+      .message-sender {
+        font-weight: 600;
+        font-size: 13px;
+        color: #25d366;
+        margin-bottom: 4px;
+      }
+
+      .message-content {
+        font-size: 14px;
+        word-wrap: break-word;
+        margin-bottom: 4px;
+      }
+
+      .message-media {
+        font-style: italic;
+        color: #8696a0;
+        font-size: 13px;
+      }
+
+      .message-time {
+        font-size: 11px;
+        color: #8696a0;
+        text-align: right;
+        margin-top: 4px;
+      }
+
+      /* Input de mensaje */
+      .message-input-container {
+        padding: 10px 20px;
+        background: #202c33;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .message-input {
+        flex: 1;
+        padding: 12px 16px;
+        background: #2a3942;
+        border: none;
+        border-radius: 8px;
+        color: #e9edef;
+        font-size: 14px;
+        outline: none;
+      }
+
+      .message-input::placeholder {
+        color: #8696a0;
+      }
+
+      .send-btn {
+        padding: 12px 24px;
+        background: #25d366;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+
+      .send-btn:hover {
+        background: #20c05c;
+      }
+
+      .empty-state {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        color: #8696a0;
+      }
+
+      .empty-state h3 {
+        font-size: 24px;
+        margin-bottom: 10px;
+      }
+
+      /* Scrollbar personalizada */
+      ::-webkit-scrollbar {
+        width: 6px;
+      }
+
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      ::-webkit-scrollbar-thumb {
+        background: #374045;
+        border-radius: 3px;
+      }
+
+      ::-webkit-scrollbar-thumb:hover {
+        background: #4a5a62;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app-container">
+      <!-- Panel de conexión -->
+      <div id="connectionPanel" class="connection-panel">
+        <h1>🐱 Loader Meow</h1>
+        <p>Cliente de WhatsApp Desktop</p>
+        <div id="qrContainer" class="qr-container" style="display: none">
+          <div id="qrCode">Esperando código QR...</div>
+        </div>
+        <button id="connectBtn" class="connect-btn" onclick="connectWhatsApp()">
+          Conectar WhatsApp
+        </button>
+      </div>
+
+      <!-- Sidebar de chats -->
+      <div id="sidebar" class="sidebar">
+        <div class="sidebar-header">
+          <h2>Chats</h2>
+          <button class="refresh-btn" onclick="refreshChats()">🔄</button>
+        </div>
+        <div id="chatsList" class="chats-list">
+          <div class="empty-state">
+            <h3>No hay chats</h3>
+            <p>Los mensajes aparecerán aquí</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel de mensajes -->
+      <div id="messagesPanel" class="messages-panel">
+        <div class="messages-header">
+          <button class="back-btn" onclick="closeChat()">←</button>
+          <h3 id="chatTitle">Selecciona un chat</h3>
+        </div>
+        <div id="messagesContainer" class="messages-container">
+          <div class="empty-state">
+            <h3>Selecciona un chat</h3>
+            <p>para ver los mensajes</p>
+          </div>
+        </div>
+        <div class="message-input-container">
+          <input
+            type="text"
+            id="messageInput"
+            class="message-input"
+            placeholder="Escribe un mensaje..."
+            onkeypress="if(event.key==='Enter') sendMessage()"
+          />
+          <button class="send-btn" onclick="sendMessage()">Enviar</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="wails/runtime/runtime.js"></script>
+    <script>
+      let currentChatJID = null;
+
+      // Inicializar al cargar
+      window.addEventListener("DOMContentLoaded", () => {
+        checkConnection();
+      });
+
+      // Escuchar eventos
+      window.runtime.EventsOn("qr-code", (qrCode) => {
+        console.log("QR Code recibido");
+        document.getElementById("qrContainer").style.display = "block";
+        document.getElementById("qrCode").innerHTML = generateQR(qrCode);
+        document.getElementById("connectBtn").style.display = "none";
+      });
+
+      window.runtime.EventsOn("authenticated", () => {
+        console.log("Autenticado!");
+        showMainInterface();
+      });
+
+      window.runtime.EventsOn("connected", () => {
+        console.log("Conectado!");
+        showMainInterface();
+      });
+
+      window.runtime.EventsOn("new-message", (message) => {
+        console.log("Nuevo mensaje:", message);
+        refreshChats();
+        if (currentChatJID === message.chat_jid) {
+          loadMessages(currentChatJID);
+        }
+      });
+
+      async function checkConnection() {
+        try {
+          const isLoggedIn = await window.go.main.App.IsLoggedIn();
+          if (isLoggedIn) {
+            await window.go.main.App.InitWhatsApp();
+            await window.go.main.App.ConnectWhatsApp();
+            showMainInterface();
+          }
+        } catch (err) {
+          console.error("Error checking connection:", err);
+        }
+      }
+
+      async function connectWhatsApp() {
+        const btn = document.getElementById("connectBtn");
+        btn.innerHTML = '<div class="loading"></div>Conectando...';
+        btn.disabled = true;
+
+        try {
+          await window.go.main.App.InitWhatsApp();
+          await window.go.main.App.ConnectWhatsApp();
+
+          const isLoggedIn = await window.go.main.App.IsLoggedIn();
+          if (isLoggedIn) {
+            showMainInterface();
+          }
+        } catch (err) {
+          alert("Error al conectar: " + err);
+          btn.innerHTML = "Conectar WhatsApp";
+          btn.disabled = false;
+        }
+      }
+
+      function showMainInterface() {
+        document.getElementById("connectionPanel").style.display = "none";
+        document.getElementById("sidebar").classList.add("active");
+        refreshChats();
+      }
+
+      async function refreshChats() {
+        try {
+          const chats = await window.go.main.App.GetChats();
+          const chatsList = document.getElementById("chatsList");
+
+          if (!chats || chats.length === 0) {
+            chatsList.innerHTML = `
+                        <div class="empty-state">
+                            <h3>No hay chats</h3>
+                            <p>Los mensajes aparecerán aquí</p>
+                        </div>
+                    `;
+            return;
+          }
+
+          chatsList.innerHTML = "";
+          chats.forEach((chat) => {
+            const chatItem = document.createElement("div");
+            chatItem.className = "chat-item";
+            chatItem.onclick = () => selectChat(chat.jid, chat.name);
+
+            const time = new Date(chat.last_message_time);
+            const timeStr = formatTime(time);
+
+            chatItem.innerHTML = `
+                        <div class="chat-time">${timeStr}</div>
+                        <div class="chat-name">${chat.name}</div>
+                        <div class="chat-last-message">Toca para ver mensajes</div>
+                    `;
+
+            chatsList.appendChild(chatItem);
+          });
+        } catch (err) {
+          console.error("Error refreshing chats:", err);
+        }
+      }
+
+      async function selectChat(jid, name) {
+        currentChatJID = jid;
+        document.getElementById("chatTitle").textContent = name;
+        document.getElementById("messagesPanel").classList.add("active");
+
+        // Marcar chat activo
+        document.querySelectorAll(".chat-item").forEach((item) => {
+          item.classList.remove("active");
+        });
+        event.currentTarget.classList.add("active");
+
+        await loadMessages(jid);
+      }
+
+      async function loadMessages(chatJID) {
+        try {
+          const messages = await window.go.main.App.GetMessages(chatJID);
+          const container = document.getElementById("messagesContainer");
+
+          if (!messages || messages.length === 0) {
+            container.innerHTML = `
+                        <div class="empty-state">
+                            <h3>No hay mensajes</h3>
+                            <p>Inicia una conversación</p>
+                        </div>
+                    `;
+            return;
+          }
+
+          container.innerHTML = "";
+          messages.forEach((msg) => {
+            const messageDiv = document.createElement("div");
+            messageDiv.className = msg.is_from_me
+              ? "message outgoing"
+              : "message incoming";
+
+            let content = "";
+            if (!msg.is_from_me) {
+              // Formatear el teléfono con +
+              const phone = msg.sender.startsWith("+")
+                ? msg.sender
+                : `+${msg.sender}`;
+              content += `<div class="message-sender">${phone}</div>`;
+            }
+            if (msg.content) {
+              content += `<div class="message-content">${escapeHtml(
+                msg.content
+              )}</div>`;
+            }
+            if (msg.media_type) {
+              content += `<div class="message-media">📎 ${msg.media_type}: ${msg.filename}</div>`;
+            }
+
+            const time = new Date(msg.timestamp);
+            const timeStr = formatTime(time);
+            content += `<div class="message-time">${timeStr}</div>`;
+
+            messageDiv.innerHTML = `<div class="message-bubble">${content}</div>`;
+            container.appendChild(messageDiv);
+          });
+
+          // Scroll al final
+          container.scrollTop = container.scrollHeight;
+        } catch (err) {
+          console.error("Error loading messages:", err);
+        }
+      }
+
+      async function sendMessage() {
+        if (!currentChatJID) return;
+
+        const input = document.getElementById("messageInput");
+        const message = input.value.trim();
+
+        if (!message) return;
+
+        try {
+          await window.go.main.App.SendMessage(currentChatJID, message);
+          input.value = "";
+          // Recargar mensajes después de enviar
+          setTimeout(() => loadMessages(currentChatJID), 500);
+        } catch (err) {
+          alert("Error al enviar mensaje: " + err);
+        }
+      }
+
+      function closeChat() {
+        currentChatJID = null;
+        document.getElementById("messagesPanel").classList.remove("active");
+      }
+
+      function formatTime(date) {
+        const now = new Date();
+        const diff = now - date;
+
+        if (diff < 86400000) {
+          // Menos de 24 horas
+          return date.toLocaleTimeString("es", {
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+        } else if (diff < 604800000) {
+          // Menos de 7 días
+          return date.toLocaleDateString("es", { weekday: "short" });
+        } else {
+          return date.toLocaleDateString("es", {
+            day: "2-digit",
+            month: "2-digit",
+          });
+        }
+      }
+
+      function escapeHtml(text) {
+        const div = document.createElement("div");
+        div.textContent = text;
+        return div.innerHTML;
+      }
+
+      function generateQR(text) {
+        // Generar un código QR simple usando un servicio externo
+        return `<img src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(
+          text
+        )}" alt="QR Code" style="width: 100%; height: 100%;">`;
+      }
+    </script>
+  </body>
+</html>

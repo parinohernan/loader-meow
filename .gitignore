@@ -1,0 +1,88 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+
+# Wails build directory
+build/
+
+# Environment variables
+.env
+
+# OS specific files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE specific files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.code-workspace
+
+# Node modules (if using npm/yarn for frontend)
+node_modules/
+
+# Wails specific
+frontend/node_modules/
+frontend/dist/node_modules/
+frontend/wailsjs/
+
+# Database files (SQLite)
+store/
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+*.log
+
+# Temporary files
+tmp/
+temp/
+
+# Windows specific
+*.lnk
+ehthumbs.db
+[Dd]esktop.ini
+
+# macOS specific
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux specific
+.directory
+.Trash-*
+
+# Development files
+debug/
+*.prof
+*.pprof
+
+# Compiled Object files
+*.o
+*.a
+*.lib
+
+# Backup files
+*.bak
+*.backup
+*~
