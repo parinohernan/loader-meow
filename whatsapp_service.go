@@ -25,19 +25,22 @@ type WhatsAppService struct {
 	onMessage    func(ChatMessage)
 	onQRCode     func(string)
 	onConnected  func()
+	onPhoneAssociationNeeded func(PhoneAssociationRequest)
 }
 
 // ChatMessage representa un mensaje para la UI
 type ChatMessage struct {
-	ID        string    `json:"id"`
-	ChatJID   string    `json:"chat_jid"`
-	ChatName  string    `json:"chat_name"`
-	Sender    string    `json:"sender"`
-	Content   string    `json:"content"`
-	Timestamp time.Time `json:"timestamp"`
-	IsFromMe  bool      `json:"is_from_me"`
-	MediaType string    `json:"media_type"`
-	Filename  string    `json:"filename"`
+	ID          string    `json:"id"`
+	ChatJID     string    `json:"chat_jid"`
+	ChatName    string    `json:"chat_name"`
+	SenderPhone string    `json:"sender_phone"` // Número de teléfono o LID si no disponible
+	SenderName  string    `json:"sender_name"`  // PushName del contacto
+	Content     string    `json:"content"`
+	Timestamp   time.Time `json:"timestamp"`
+	IsFromMe    bool      `json:"is_from_me"`
+	MediaType   string    `json:"media_type"`
+	Filename    string    `json:"filename"`
+	Processed   bool      `json:"processed"`
 }
 
 // Chat representa un chat en la lista
@@ -58,10 +61,15 @@ func NewMessageStore() (*MessageStore, error) {
 		return nil, fmt.Errorf("failed to create store directory: %v", err)
 	}
 
-	db, err := sql.Open("sqlite3", "file:store/messages.db?_foreign_keys=on")
+	db, err := sql.Open("sqlite3", "file:store/messages.db?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=5000")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open message database: %v", err)
 	}
+	
+	// Configurar pool de conexiones para evitar bloqueos
+	db.SetMaxOpenConns(1)  // SQLite funciona mejor con una sola conexión de escritura
+	db.SetMaxIdleConns(1)
+	db.SetConnMaxLifetime(0)
 
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS chats (
@@ -73,7 +81,8 @@ func NewMessageStore() (*MessageStore, error) {
 		CREATE TABLE IF NOT EXISTS messages (
 			id TEXT,
 			chat_jid TEXT,
-			sender TEXT,
+			sender_phone TEXT,
+			sender_name TEXT,
 			content TEXT,
 			timestamp TIMESTAMP,
 			is_from_me BOOLEAN,
@@ -84,9 +93,36 @@ func NewMessageStore() (*MessageStore, error) {
 			file_sha256 BLOB,
 			file_enc_sha256 BLOB,
 			file_length INTEGER,
+			processed BOOLEAN DEFAULT 0,
 			PRIMARY KEY (id, chat_jid),
 			FOREIGN KEY (chat_jid) REFERENCES chats(jid)
 		);
+
+		-- Índice para búsqueda rápida de duplicados (por teléfono)
+		CREATE INDEX IF NOT EXISTS idx_messages_duplicate_phone
+		ON messages(chat_jid, sender_phone, content, timestamp);
+
+		-- Tabla para asociar sender_phone con números reales
+		CREATE TABLE IF NOT EXISTS phone_associations (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			sender_phone TEXT NOT NULL UNIQUE,
+			real_phone TEXT,
+			display_name TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+
+		-- Índices para phone_associations
+		CREATE INDEX IF NOT EXISTS idx_phone_associations_sender ON phone_associations(sender_phone);
+		CREATE INDEX IF NOT EXISTS idx_phone_associations_real ON phone_associations(real_phone);
+
+		-- Índice para búsqueda por nombre
+		CREATE INDEX IF NOT EXISTS idx_messages_sender_name
+		ON messages(sender_name, timestamp);
+
+		-- Índice para mensajes no procesados
+		CREATE INDEX IF NOT EXISTS idx_messages_processed 
+		ON messages(processed, timestamp);
 	`)
 	if err != nil {
 		db.Close()
@@ -110,18 +146,41 @@ func (store *MessageStore) StoreChat(jid, name string, lastMessageTime time.Time
 	return err
 }
 
-// StoreMessage guarda un mensaje en la base de datos
-func (store *MessageStore) StoreMessage(id, chatJID, sender, content string, timestamp time.Time, isFromMe bool,
+// StoreMessage guarda un mensaje en la base de datos solo si no existe un duplicado
+// Un duplicado se define como un mensaje con el mismo sender_phone, content en las últimas 48 horas
+func (store *MessageStore) StoreMessage(id, chatJID, senderPhone, senderName, content string, timestamp time.Time, isFromMe bool,
 	mediaType, filename, url string, mediaKey, fileSHA256, fileEncSHA256 []byte, fileLength uint64) error {
 	if content == "" && mediaType == "" {
 		return nil
 	}
 
-	_, err := store.db.Exec(
-		`INSERT OR REPLACE INTO messages 
-		(id, chat_jid, sender, content, timestamp, is_from_me, media_type, filename, url, media_key, file_sha256, file_enc_sha256, file_length) 
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, chatJID, sender, content, timestamp, isFromMe, mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength,
+	// Verificar si ya existe un mensaje duplicado (mismo sender_phone + content en las últimas 24 horas)
+	// GLOBAL: No importa en qué grupo fue enviado
+	var exists int
+	err := store.db.QueryRow(`
+		SELECT COUNT(*) FROM messages 
+		WHERE sender_phone = ? 
+		AND content = ?
+		AND timestamp >= datetime(?, '-24 hours')
+		AND timestamp <= datetime(?, '+24 hours')
+	`, senderPhone, content, timestamp, timestamp).Scan(&exists)
+	
+	if err != nil {
+		return fmt.Errorf("error verificando duplicado: %v", err)
+	}
+
+	if exists > 0 {
+		// Mensaje duplicado detectado, no insertar
+		fmt.Printf("⚠️ Se encontró mensaje duplicado - Sender: %s, Content: %.50s...\n", senderPhone, content)
+		return nil
+	}
+
+	// Insertar el mensaje nuevo con processed = false por defecto
+	_, err = store.db.Exec(
+		`INSERT INTO messages 
+		(id, chat_jid, sender_phone, sender_name, content, timestamp, is_from_me, media_type, filename, url, media_key, file_sha256, file_enc_sha256, file_length, processed) 
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+		id, chatJID, senderPhone, senderName, content, timestamp, isFromMe, mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength,
 	)
 	return err
 }
@@ -150,7 +209,7 @@ func (store *MessageStore) GetChats() ([]Chat, error) {
 // GetMessages obtiene mensajes de un chat
 func (store *MessageStore) GetMessages(chatJID string, limit int) ([]ChatMessage, error) {
 	rows, err := store.db.Query(
-		`SELECT id, sender, content, timestamp, is_from_me, media_type, filename 
+		`SELECT id, sender_phone, sender_name, content, timestamp, is_from_me, media_type, filename, processed 
 		FROM messages WHERE chat_jid = ? ORDER BY timestamp DESC LIMIT ?`,
 		chatJID, limit,
 	)
@@ -162,7 +221,7 @@ func (store *MessageStore) GetMessages(chatJID string, limit int) ([]ChatMessage
 	var messages []ChatMessage
 	for rows.Next() {
 		var msg ChatMessage
-		err := rows.Scan(&msg.ID, &msg.Sender, &msg.Content, &msg.Timestamp, &msg.IsFromMe, &msg.MediaType, &msg.Filename)
+		err := rows.Scan(&msg.ID, &msg.SenderPhone, &msg.SenderName, &msg.Content, &msg.Timestamp, &msg.IsFromMe, &msg.MediaType, &msg.Filename, &msg.Processed)
 		if err != nil {
 			return nil, err
 		}
@@ -171,6 +230,83 @@ func (store *MessageStore) GetMessages(chatJID string, limit int) ([]ChatMessage
 	}
 
 	return messages, nil
+}
+
+// GetUnprocessedMessages obtiene todos los mensajes no procesados
+func (store *MessageStore) GetUnprocessedMessages(limit int) ([]ChatMessage, error) {
+	rows, err := store.db.Query(
+		`SELECT id, chat_jid, sender_phone, sender_name, content, timestamp, is_from_me, media_type, filename, processed 
+		FROM messages 
+		WHERE processed = 0 
+		ORDER BY timestamp ASC 
+		LIMIT ?`,
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var messages []ChatMessage
+	for rows.Next() {
+		var msg ChatMessage
+		err := rows.Scan(&msg.ID, &msg.ChatJID, &msg.SenderPhone, &msg.SenderName, &msg.Content, &msg.Timestamp, &msg.IsFromMe, &msg.MediaType, &msg.Filename, &msg.Processed)
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, msg)
+	}
+
+	return messages, nil
+}
+
+// MarkMessageAsProcessed marca un mensaje como procesado
+func (store *MessageStore) MarkMessageAsProcessed(messageID, chatJID string) error {
+	_, err := store.db.Exec(
+		`UPDATE messages SET processed = 1 WHERE id = ? AND chat_jid = ?`,
+		messageID, chatJID,
+	)
+	return err
+}
+
+// MarkMessagesAsProcessed marca múltiples mensajes como procesados (útil para lotes)
+func (store *MessageStore) MarkMessagesAsProcessed(messageIDs []string, chatJID string) error {
+	if len(messageIDs) == 0 {
+		return nil
+	}
+
+	tx, err := store.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare(`UPDATE messages SET processed = 1 WHERE id = ? AND chat_jid = ?`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, msgID := range messageIDs {
+		_, err := stmt.Exec(msgID, chatJID)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+// GetMessageStats obtiene estadísticas de mensajes
+func (store *MessageStore) GetMessageStats() (total, processed, unprocessed int, err error) {
+	err = store.db.QueryRow(`
+		SELECT 
+			COUNT(*) as total,
+			SUM(CASE WHEN processed = 1 THEN 1 ELSE 0 END) as processed,
+			SUM(CASE WHEN processed = 0 THEN 1 ELSE 0 END) as unprocessed
+		FROM messages
+	`).Scan(&total, &processed, &unprocessed)
+	return
 }
 
 // NewWhatsAppService crea una nueva instancia del servicio
@@ -287,7 +423,14 @@ func (s *WhatsAppService) eventHandler(evt interface{}) {
 func (s *WhatsAppService) handleMessage(msg *events.Message) {
 	chatJID := msg.Info.Chat.String()
 	
-	// Extraer número de teléfono del remitente
+	// ========== LOGGING DETALLADO PARA DEBUG ==========
+	// Log simplificado del mensaje
+	s.logger.Infof("📨 Nuevo mensaje: %s en %s", msg.Info.PushName, msg.Info.Chat.String())
+	
+	// Extraer contenido del mensaje
+	content := extractTextContent(msg.Message)
+	
+	// Extraer número de teléfono Y nombre del remitente
 	var senderPhone string
 	var senderName string
 	
@@ -297,21 +440,42 @@ func (s *WhatsAppService) handleMessage(msg *events.Message) {
 		senderName = "Yo"
 	} else {
 		// Para mensajes entrantes
-		// Primero intentamos obtener el número de teléfono válido
-		senderPhone = s.extractValidPhone(msg)
+		senderJID := msg.Info.Sender
 		
-		// Intentar obtener el nombre del contacto
+		// SIEMPRE intentar obtener el nombre primero
 		senderName = s.getSenderName(msg)
 		
-		// Si no pudimos obtener un nombre, usar el teléfono
+	// Determinar el "número de teléfono" o identificador según el tipo de servidor
+	switch senderJID.Server {
+	case "lid":
+		// Usuario con LID - intentar obtener número real de asociaciones
+		// s.logger.Infof("🔍 Detectado LID: %s", senderJID.User)
+		realPhone := s.GetRealPhone(senderJID.User)
+		if realPhone != "" {
+			senderPhone = realPhone
+			s.logger.Infof("✅ Número real encontrado: %s para %s", senderPhone, senderName)
+		} else {
+			s.requestPhoneAssociation(senderJID.User, senderName, msg.Info.Chat.String())
+			senderPhone = senderJID.User // Usar LID temporalmente hasta que se asocie
+			s.logger.Infof("🔗 Solicitando asociación para: %s (LID: %s)", senderName, senderJID.User)
+		}
+		
+	case "s.whatsapp.net":
+		// Usuario normal - tiene número real
+		senderPhone = senderJID.User
+		
+	default:
+		// Otro tipo de servidor
+		senderPhone = senderJID.User
+	}
+		
+		// Si no hay nombre, usar el phone como nombre
 		if senderName == "" {
 			senderName = senderPhone
 		}
 	}
 	
-	// Log para debugging
-	s.logger.Infof("Mensaje en grupo: Chat=%s, Sender.User=%s, Sender=%s, Phone extraído=%s, Nombre=%s",
-		msg.Info.Chat.String(), msg.Info.Sender.User, msg.Info.Sender.String(), senderPhone, senderName)
+	// Log final eliminado para simplificar
 	
 	// Obtener nombre del chat
 	name := s.getChatName(msg.Info.Chat, chatJID, senderPhone)
@@ -322,19 +486,19 @@ func (s *WhatsAppService) handleMessage(msg *events.Message) {
 		s.logger.Warnf("Failed to store chat: %v", err)
 	}
 
-	// Extraer contenido
-	content := extractTextContent(msg.Message)
+	// Extraer info de media
 	mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength := extractMediaInfo(msg.Message)
 
 	if content == "" && mediaType == "" {
 		return
 	}
 
-	// Guardar mensaje
+	// Guardar mensaje con teléfono Y nombre separados
 	err = s.messageStore.StoreMessage(
 		msg.Info.ID,
 		chatJID,
 		senderPhone,
+		senderName,
 		content,
 		msg.Info.Timestamp,
 		msg.Info.IsFromMe,
@@ -355,56 +519,180 @@ func (s *WhatsAppService) handleMessage(msg *events.Message) {
 	// Notificar a la UI
 	if s.onMessage != nil {
 		s.onMessage(ChatMessage{
-			ID:        msg.Info.ID,
-			ChatJID:   chatJID,
-			ChatName:  name,
-			Sender:    senderPhone,
-			Content:   content,
-			Timestamp: msg.Info.Timestamp,
-			IsFromMe:  msg.Info.IsFromMe,
-			MediaType: mediaType,
-			Filename:  filename,
+			ID:          msg.Info.ID,
+			ChatJID:     chatJID,
+			ChatName:    name,
+			SenderPhone: senderPhone,
+			SenderName:  senderName,
+			Content:     content,
+			Timestamp:   msg.Info.Timestamp,
+			IsFromMe:    msg.Info.IsFromMe,
+			MediaType:   mediaType,
+			Filename:    filename,
 		})
 	}
 }
 
-// extractValidPhone extrae un número de teléfono válido del mensaje
-// Maneja correctamente grupos y chats individuales
-func (s *WhatsAppService) extractValidPhone(msg *events.Message) string {
-	senderJID := msg.Info.Sender
-	userPart := senderJID.User
+
+// ParticipantInfo contiene toda la información disponible de un participante
+type ParticipantInfo struct {
+	Index                   int
+	DisplayName             string
+	JID                     string
+	LID                     string
+	PhoneNumber             string
+	PhoneSource             string
+	PhoneFromLID            string
+	ResolvedPhone           string
+	ResolvedPhoneFromLID    string
+	ContactName             string
+	PushName                string
+}
+
+// PhoneAssociation representa una asociación entre sender_phone y número real
+type PhoneAssociation struct {
+	ID          int       `json:"id"`
+	SenderPhone string    `json:"sender_phone"`
+	RealPhone   string    `json:"real_phone"`
+	DisplayName string    `json:"display_name"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// SenderInfo representa información de un remitente para la pestaña de asociaciones
+type SenderInfo struct {
+	SenderPhone   string    `json:"sender_phone"`
+	SenderName    string    `json:"sender_name"`
+	RealPhone     string    `json:"real_phone"`
+	MessageCount  int       `json:"message_count"`
+	LastMessage   time.Time `json:"last_message"`
+	LastGroupName string    `json:"last_group_name"`
+}
+
+// PhoneAssociationRequest representa una solicitud de asociación
+type PhoneAssociationRequest struct {
+	LID         string    `json:"lid"`
+	DisplayName string    `json:"display_name"`
+	GroupJID    string    `json:"group_jid"`
+	Timestamp   time.Time `json:"timestamp"`
+}
+
+
+
+// ListAllParticipantNumbers obtiene TODOS los números/IDs disponibles de todos los participantes
+func (s *WhatsAppService) ListAllParticipantNumbers(groupJID types.JID) []ParticipantInfo {
+	var participants []ParticipantInfo
 	
-	// En WhatsApp, los números de teléfono válidos:
-	// - Tienen entre 7 y 15 dígitos
-	// - Empiezan con el código de país (1-3 dígitos)
-	// - No empiezan con 0
+	groupInfo, err := s.client.GetGroupInfo(groupJID)
+	if err != nil {
+		s.logger.Errorf("Error obteniendo info del grupo: %v", err)
+		return participants
+	}
 	
-	// Si el User parece un número de teléfono válido
-	if len(userPart) >= 7 && len(userPart) <= 15 {
-		// Verificar que no sea un ID de grupo (generalmente más largo o empieza con códigos específicos)
-		// Los códigos de país válidos son de 1 a 3 dígitos
-		firstDigit := string(userPart[0])
+	s.logger.Infof("📋 Listando números de %d participantes del grupo '%s'", len(groupInfo.Participants), groupInfo.Name)
+	
+	for i, participant := range groupInfo.Participants {
+		info := ParticipantInfo{
+			Index:      i + 1,
+			DisplayName: participant.DisplayName,
+			JID:        participant.JID.String(),
+			LID:        participant.LID.String(),
+		}
 		
-		// Si empieza con 0 o tiene más de 15 dígitos, probablemente no es un número válido
-		if firstDigit != "0" && len(userPart) <= 15 {
-			// Validación adicional: verificar el código de país
-			// Códigos de país comunes en América: 1, 52, 54, 55, 56, 57, 58, 591, 593, etc.
-			if len(userPart) >= 10 {
-				return userPart
+		// Pequeño delay para evitar rate limits
+		if i > 0 {
+			time.Sleep(500 * time.Millisecond)
+		}
+		
+		// Intentar obtener número real del JID
+		if participant.JID.Server == "s.whatsapp.net" {
+			info.PhoneNumber = participant.JID.User
+			info.PhoneSource = "JID"
+		}
+		
+		// Intentar obtener número real del LID
+		if participant.LID.Server == "s.whatsapp.net" {
+			info.PhoneFromLID = participant.LID.User
+		}
+		
+		// Intentar resolver con GetUserInfo solo si es necesario
+		if participant.JID.Server == "lid" {
+			realPhone := s.resolvePhoneFromUserInfo(participant.JID)
+			if realPhone != "" {
+				info.ResolvedPhone = realPhone
+				info.PhoneSource = "GetUserInfo"
 			}
+		}
+		
+		// Solo intentar resolver LID si es diferente al JID
+		if participant.LID.Server == "lid" && participant.LID.User != participant.JID.User {
+			realPhoneFromLID := s.resolvePhoneFromUserInfo(participant.LID)
+			if realPhoneFromLID != "" {
+				info.ResolvedPhoneFromLID = realPhoneFromLID
+			}
+		}
+		
+		// Obtener información adicional
+		contact, err := s.client.Store.Contacts.GetContact(context.Background(), participant.JID)
+		if err == nil {
+			info.ContactName = contact.FullName
+			info.PushName = contact.PushName
+		}
+		
+		participants = append(participants, info)
+		
+		// Log detallado
+		s.logger.Infof("--- Participante #%d: %s ---", info.Index, info.DisplayName)
+		s.logger.Infof("  📱 Número principal: %s (fuente: %s)", info.PhoneNumber, info.PhoneSource)
+		s.logger.Infof("  🔒 LID: %s", info.LID)
+		s.logger.Infof("  📞 Número desde LID: %s", info.PhoneFromLID)
+		s.logger.Infof("  ✅ Número resuelto: %s", info.ResolvedPhone)
+		s.logger.Infof("  🔍 Resuelto desde LID: %s", info.ResolvedPhoneFromLID)
+		s.logger.Infof("  👤 Nombre contacto: %s", info.ContactName)
+		s.logger.Infof("  🏷️ PushName: %s", info.PushName)
+		s.logger.Infof("")
+	}
+	
+	return participants
+}
+
+
+// resolvePhoneFromUserInfo intenta obtener el número real usando GetUserInfo
+func (s *WhatsAppService) resolvePhoneFromUserInfo(lidJID types.JID) string {
+	s.logger.Infof("📞 Llamando GetUserInfo para LID: %s", lidJID.String())
+	
+	// Intentar obtener información del usuario
+	users, err := s.client.GetUserInfo([]types.JID{lidJID})
+	if err != nil {
+		s.logger.Warnf("Error en GetUserInfo: %v", err)
+		return ""
+	}
+	
+	// Verificar si obtuvimos información
+	if len(users) == 0 {
+		s.logger.Warnf("GetUserInfo no devolvió información")
+		return ""
+	}
+	
+	// Examinar la información del usuario
+	for jid, info := range users {
+		s.logger.Infof("UserInfo recibido:")
+		s.logger.Infof("  - JID key: %s", jid.String())
+		s.logger.Infof("  - VerifiedName: %s", info.VerifiedName)
+		s.logger.Infof("  - Status: %s", info.Status)
+		s.logger.Infof("  - PictureID: %s", info.PictureID)
+		s.logger.Infof("  - Devices: %v", info.Devices)
+		
+		// Si el JID de respuesta es diferente al LID, es el número real
+		if jid.Server == "s.whatsapp.net" && jid.User != lidJID.User {
+			s.logger.Infof("✅✅✅ Número real encontrado en GetUserInfo: %s", jid.User)
+			return jid.User
 		}
 	}
 	
-	// Si no es válido, intentar obtener de otra forma
-	// En grupos, a veces el Server da pistas
-	if senderJID.Server == "s.whatsapp.net" {
-		// Este es el formato normal de usuarios
-		return userPart
-	}
-	
-	// Como último recurso, devolver lo que tenemos
-	return userPart
+	s.logger.Warnf("GetUserInfo no reveló el número real")
+	return ""
 }
+
 
 // getSenderName intenta obtener el nombre del contacto
 func (s *WhatsAppService) getSenderName(msg *events.Message) string {
@@ -535,5 +823,173 @@ func (s *WhatsAppService) SendMessage(recipient, message string) error {
 	_, err = s.client.SendMessage(context.Background(), recipientJID, msg)
 	return err
 }
+
+// ===== FUNCIONES PARA ASOCIACIONES DE TELÉFONOS =====
+
+// GetSendersForAssociation obtiene todos los remitentes únicos con sus asociaciones
+// Incluye tanto remitentes con mensajes como aquellos solo en phone_associations
+func (s *WhatsAppService) GetSendersForAssociation() ([]SenderInfo, error) {
+	query := `
+		WITH all_senders AS (
+			-- Remitentes con mensajes (incluyendo grupo más reciente)
+			SELECT 
+				m.sender_phone,
+				m.sender_name,
+				COUNT(*) as message_count,
+				MAX(m.timestamp) as last_message,
+				-- Obtener el nombre del grupo del mensaje más reciente
+				(SELECT c.name 
+				 FROM messages m2 
+				 JOIN chats c ON m2.chat_jid = c.jid 
+				 WHERE m2.sender_phone = m.sender_phone 
+				 ORDER BY m2.timestamp DESC 
+				 LIMIT 1) as last_group_name
+			FROM messages m
+			WHERE m.sender_phone != '' AND m.sender_phone IS NOT NULL
+			GROUP BY m.sender_phone, m.sender_name
+			
+			UNION
+			
+			-- Remitentes solo en phone_associations (sin mensajes recientes)
+			SELECT 
+				pa.sender_phone,
+				pa.display_name as sender_name,
+				0 as message_count,
+				NULL as last_message,
+				'' as last_group_name
+			FROM phone_associations pa
+			WHERE pa.sender_phone NOT IN (
+				SELECT DISTINCT sender_phone FROM messages WHERE sender_phone IS NOT NULL
+			)
+		)
+		SELECT 
+			s.sender_phone,
+			COALESCE(s.sender_name, '') as sender_name,
+			COALESCE(pa.real_phone, '') as real_phone,
+			s.message_count,
+			COALESCE(s.last_message, '') as last_message,
+			COALESCE(s.last_group_name, '') as last_group_name
+		FROM all_senders s
+		LEFT JOIN phone_associations pa ON s.sender_phone = pa.sender_phone
+		ORDER BY s.message_count DESC, s.last_message DESC
+	`
+	
+	rows, err := s.messageStore.db.Query(query)
+	if err != nil {
+		s.logger.Errorf("Error en consulta SQL: %v", err)
+		// Retornar array vacío en lugar de error para mejor experiencia
+		return []SenderInfo{}, nil
+	}
+	defer rows.Close()
+	
+	var senders []SenderInfo
+	for rows.Next() {
+		var sender SenderInfo
+		var lastMessageStr string
+		
+		err := rows.Scan(
+			&sender.SenderPhone,
+			&sender.SenderName,
+			&sender.RealPhone,
+			&sender.MessageCount,
+			&lastMessageStr,
+			&sender.LastGroupName,
+		)
+		if err != nil {
+			s.logger.Errorf("Error al escanear sender: %v", err)
+			continue // Saltar este registro pero continuar con los demás
+		}
+		
+		// Convertir string a time.Time
+		if lastMessageStr != "" {
+			lastMessage, err := time.Parse("2006-01-02 15:04:05", lastMessageStr)
+			if err != nil {
+				// Intentar otro formato común
+				lastMessage, err = time.Parse(time.RFC3339, lastMessageStr)
+				if err != nil {
+					s.logger.Warnf("No se pudo parsear fecha para %s: %v", sender.SenderPhone, err)
+					lastMessage = time.Time{} // Usar fecha vacía
+				}
+			}
+			sender.LastMessage = lastMessage
+		} else {
+			// Sin mensajes, usar fecha vacía
+			sender.LastMessage = time.Time{}
+		}
+		
+		senders = append(senders, sender)
+	}
+	
+	s.logger.Infof("📋 Obtenidos %d remitentes para asociaciones", len(senders))
+	return senders, nil
+}
+
+// SavePhoneAssociation guarda o actualiza una asociación de teléfono
+func (s *WhatsAppService) SavePhoneAssociation(senderPhone, realPhone, displayName string) error {
+	_, err := s.messageStore.db.Exec(`
+		INSERT OR REPLACE INTO phone_associations 
+		(sender_phone, real_phone, display_name, updated_at) 
+		VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+	`, senderPhone, realPhone, displayName)
+	
+	if err != nil {
+		return fmt.Errorf("failed to save phone association: %v", err)
+	}
+	
+	s.logger.Infof("✅ Asociación guardada: %s -> %s (%s)", senderPhone, realPhone, displayName)
+	return nil
+}
+
+// DeletePhoneAssociation elimina una asociación
+func (s *WhatsAppService) DeletePhoneAssociation(senderPhone string) error {
+	result, err := s.messageStore.db.Exec("DELETE FROM phone_associations WHERE sender_phone = ?", senderPhone)
+	if err != nil {
+		return fmt.Errorf("failed to delete phone association: %v", err)
+	}
+	
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %v", err)
+	}
+	
+	if rowsAffected == 0 {
+		return fmt.Errorf("phone association not found")
+	}
+	
+	s.logger.Infof("🗑️ Asociación eliminada: %s", senderPhone)
+	return nil
+}
+
+// GetRealPhone obtiene el número real asociado a un sender_phone
+func (s *WhatsAppService) GetRealPhone(senderPhone string) string {
+	var realPhone string
+	err := s.messageStore.db.QueryRow(
+		"SELECT real_phone FROM phone_associations WHERE sender_phone = ?",
+		senderPhone,
+	).Scan(&realPhone)
+	
+	if err != nil {
+		return "" // No encontrado
+	}
+	
+	return realPhone
+}
+
+// requestPhoneAssociation solicita una asociación de teléfono
+func (s *WhatsAppService) requestPhoneAssociation(lid, displayName, groupJID string) {
+	if s.onPhoneAssociationNeeded != nil {
+		s.onPhoneAssociationNeeded(PhoneAssociationRequest{
+			LID:         lid,
+			DisplayName: displayName,
+			GroupJID:    groupJID,
+			Timestamp:   time.Now(),
+		})
+		s.logger.Infof("🔗 Solicitando asociación: LID %s (%s) en grupo %s", lid, displayName, groupJID)
+	}
+}
+
+// ===== FUNCIONES SIMPLIFICADAS =====
+
+
 
 

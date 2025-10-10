@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Loader Meow - WhatsApp Desktop</title>
+    <title>CaricaLoader Meow - WhatsApp Desktop</title>
     <style>
       * {
         margin: 0;
@@ -182,17 +182,300 @@
         float: right;
       }
 
+      /* Layout principal */
+      .main-content {
+        display: block;
+        height: 100vh;
+        width: 100%;
+      }
+
       /* Panel de mensajes */
       .messages-panel {
         flex: 1;
-        display: flex;
-        flex-direction: column;
-        background: #0b141a;
         display: none;
+        flex-direction: row;
+        background: #0b141a;
+        height: 100vh;
+        width: 100%;
       }
 
       .messages-panel.active {
         display: flex;
+      }
+
+      /* Contenido de mensajes */
+      .messages-content {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        background: #0b141a;
+      }
+
+      /* Panel de asociaciones */
+      .associations-panel {
+        flex: 1;
+        display: none;
+        flex-direction: column;
+        background: #0b141a;
+        height: 100vh;
+        width: 100%;
+      }
+
+      .associations-panel.active {
+        display: flex;
+      }
+
+      /* Tabs */
+      .tabs {
+        display: flex;
+        flex-direction: column;
+        background: #2a3942;
+        border-right: 1px solid #3b4043;
+        width: 140px;
+        height: 100vh;
+        position: fixed;
+        left: 0;
+        top: 0;
+        z-index: 1000;
+      }
+
+      .tab {
+        width: 100%;
+        padding: 12px 16px;
+        background: transparent;
+        border: none;
+        color: #8696a0;
+        font-size: 14px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        border-right: 3px solid transparent;
+        text-align: left;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .tab:hover {
+        background: #3b4043;
+        color: #e9edef;
+      }
+
+      .tab.active {
+        color: #25d366;
+        border-right-color: #25d366;
+        background: #3b4043;
+      }
+
+      /* Área de contenido */
+      .content-area {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        margin-left: 140px; /* Espacio para las pestañas fijas */
+      }
+
+      /* Tabla de asociaciones */
+      .associations-table {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px;
+        max-height: calc(100vh - 200px);
+      }
+
+      .associations-table table {
+        width: 100%;
+        border-collapse: collapse;
+        background: #2a3942;
+        border-radius: 8px;
+        overflow: hidden;
+      }
+
+      .associations-table th,
+      .associations-table td {
+        padding: 12px 15px;
+        text-align: left;
+        border-bottom: 1px solid #3b4043;
+      }
+
+      .associations-table th {
+        background: #3b4043;
+        color: #e9edef;
+        font-weight: 600;
+        font-size: 14px;
+      }
+
+      .associations-table td {
+        color: #8696a0;
+        font-size: 14px;
+      }
+
+      .associations-table tr:hover {
+        background: #3b4043;
+      }
+
+      .associations-table tr:hover td {
+        color: #e9edef;
+      }
+
+      .phone-input {
+        background: #1e2327;
+        border: 1px solid #3b4043;
+        color: #e9edef;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 14px;
+        width: 150px;
+        transition: border-color 0.3s ease;
+      }
+
+      .phone-input:focus {
+        outline: none;
+        border-color: #25d366;
+        box-shadow: 0 0 0 2px rgba(37, 211, 102, 0.2);
+      }
+
+      .save-btn {
+        background: #25d366;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 6px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: background 0.3s ease;
+      }
+
+      .save-btn:hover {
+        background: #20ba5a;
+      }
+
+      .delete-btn {
+        background: #dc3545;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 6px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: background 0.3s ease;
+      }
+
+      .delete-btn:hover {
+        background: #c82333;
+      }
+
+      .message-count {
+        background: #25d366;
+        color: white;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 500;
+      }
+
+      .last-message {
+        font-size: 12px;
+        color: #8696a0;
+      }
+
+      /* Estilos para agrupación */
+      .group-header {
+        background: #25d366;
+        color: white;
+        padding: 12px 15px;
+        font-weight: 600;
+        font-size: 14px;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        border-left: 4px solid #20ba5a;
+      }
+
+      .group-header .group-count {
+        background: rgba(255, 255, 255, 0.2);
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 12px;
+        margin-left: 10px;
+      }
+
+      .group-section {
+        margin-bottom: 20px;
+      }
+
+      .group-section table {
+        margin: 0;
+        border-radius: 0 0 8px 8px;
+      }
+
+      .group-section:first-child .group-header {
+        border-radius: 8px 8px 0 0;
+      }
+
+      /* Controles de asociaciones */
+      .associations-controls {
+        display: flex;
+        gap: 20px;
+        margin-bottom: 20px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .search-container {
+        flex: 1;
+        min-width: 250px;
+      }
+
+      .search-container input {
+        width: 100%;
+        background: #2a3942;
+        border: 1px solid #3b4043;
+        color: #e9edef;
+        padding: 12px 16px;
+        border-radius: 8px;
+        font-size: 14px;
+        transition: border-color 0.3s ease;
+      }
+
+      .search-container input:focus {
+        outline: none;
+        border-color: #25d366;
+        box-shadow: 0 0 0 2px rgba(37, 211, 102, 0.2);
+      }
+
+      .filter-buttons {
+        display: flex;
+        gap: 10px;
+      }
+
+      .filter-btn {
+        background: #2a3942;
+        color: #8696a0;
+        border: 1px solid #3b4043;
+        padding: 10px 20px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        font-size: 14px;
+        font-weight: 500;
+      }
+
+      .filter-btn:hover {
+        background: #3b4043;
+        color: #e9edef;
+      }
+
+      .filter-btn.active {
+        background: #25d366;
+        color: white;
+        border-color: #25d366;
+      }
+
+      .results-counter {
+        color: #8696a0;
+        font-size: 13px;
+        margin-bottom: 10px;
       }
 
       .messages-header {
@@ -359,6 +642,166 @@
       ::-webkit-scrollbar-thumb:hover {
         background: #4a5a62;
       }
+
+      /* Modal para asociación de teléfono */
+      .modal {
+        display: none;
+        position: fixed;
+        z-index: 2000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.7);
+        backdrop-filter: blur(5px);
+      }
+
+      .modal-content {
+        background-color: #2a2f32;
+        margin: 15% auto;
+        padding: 30px;
+        border-radius: 12px;
+        width: 90%;
+        max-width: 500px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+        border: 1px solid #3b4043;
+        color: white;
+        animation: modalSlideIn 0.3s ease-out;
+      }
+
+      @keyframes modalSlideIn {
+        from {
+          transform: translateY(-50px);
+          opacity: 0;
+        }
+        to {
+          transform: translateY(0);
+          opacity: 1;
+        }
+      }
+
+      .modal h3 {
+        color: #25d366;
+        margin-bottom: 20px;
+        font-size: 20px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .modal p {
+        margin-bottom: 15px;
+        opacity: 0.9;
+        font-size: 14px;
+      }
+
+      .modal strong {
+        color: #25d366;
+      }
+
+      .form-group {
+        margin: 20px 0;
+      }
+
+      .form-group label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 500;
+        color: #e9edef;
+      }
+
+      .form-group input {
+        width: 100%;
+        padding: 12px;
+        border: 1px solid #3b4043;
+        border-radius: 8px;
+        background-color: #1e2327;
+        color: white;
+        font-size: 16px;
+        transition: border-color 0.3s ease;
+      }
+
+      .form-group input:focus {
+        outline: none;
+        border-color: #25d366;
+        box-shadow: 0 0 0 2px rgba(37, 211, 102, 0.2);
+      }
+
+      .form-group input::placeholder {
+        color: #8696a0;
+      }
+
+      .modal-buttons {
+        display: flex;
+        gap: 10px;
+        justify-content: flex-end;
+        margin-top: 25px;
+      }
+
+      .modal-buttons button {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        min-width: 100px;
+      }
+
+      .btn-primary {
+        background-color: #25d366;
+        color: white;
+      }
+
+      .btn-primary:hover {
+        background-color: #20ba5a;
+        transform: translateY(-1px);
+      }
+
+      .btn-secondary {
+        background-color: #3b4043;
+        color: white;
+      }
+
+      .btn-secondary:hover {
+        background-color: #4a4f52;
+      }
+
+      .btn-cancel {
+        background-color: #dc3545;
+        color: white;
+      }
+
+      .btn-cancel:hover {
+        background-color: #c82333;
+      }
+
+      /* Notificaciones */
+      .notification {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #25d366;
+        color: white;
+        padding: 12px 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        z-index: 1000;
+        font-size: 14px;
+        animation: slideIn 0.3s ease-out;
+      }
+
+      @keyframes slideIn {
+        from {
+          transform: translateX(100%);
+          opacity: 0;
+        }
+        to {
+          transform: translateX(0);
+          opacity: 1;
+        }
+      }
     </style>
   </head>
   <body>
@@ -375,41 +818,107 @@
         </button>
       </div>
 
-      <!-- Sidebar de chats -->
-      <div id="sidebar" class="sidebar">
-        <div class="sidebar-header">
-          <h2>Chats</h2>
-          <button class="refresh-btn" onclick="refreshChats()">🔄</button>
+      <!-- Layout principal -->
+      <div class="main-content">
+        <!-- Tabs verticales -->
+        <div class="tabs">
+          <button class="tab active" onclick="showTab('messages')">
+            💬 Mensajes
+          </button>
+          <button class="tab" onclick="showTab('associations')">
+            🔗 Asociaciones
+          </button>
         </div>
-        <div id="chatsList" class="chats-list">
-          <div class="empty-state">
-            <h3>No hay chats</h3>
-            <p>Los mensajes aparecerán aquí</p>
-          </div>
-        </div>
-      </div>
 
-      <!-- Panel de mensajes -->
-      <div id="messagesPanel" class="messages-panel">
-        <div class="messages-header">
-          <button class="back-btn" onclick="closeChat()">←</button>
-          <h3 id="chatTitle">Selecciona un chat</h3>
-        </div>
-        <div id="messagesContainer" class="messages-container">
-          <div class="empty-state">
-            <h3>Selecciona un chat</h3>
-            <p>para ver los mensajes</p>
+        <!-- Contenido principal -->
+        <div class="content-area">
+          <!-- Panel de mensajes -->
+          <div id="messagesPanel" class="messages-panel active">
+            <!-- Sidebar de chats -->
+            <div id="sidebar" class="sidebar">
+              <div class="sidebar-header">
+                <h2>Chats</h2>
+                <button class="refresh-btn" onclick="refreshChats()">🔄</button>
+              </div>
+              <div id="chatsList" class="chats-list">
+                <div class="empty-state">
+                  <h3>No hay chats</h3>
+                  <p>Los mensajes aparecerán aquí</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Área de mensajes -->
+            <div class="messages-content">
+              <div class="messages-header">
+                <button class="back-btn" onclick="closeChat()">←</button>
+                <h3 id="chatTitle">Selecciona un chat</h3>
+              </div>
+              <div id="messagesContainer" class="messages-container">
+                <div class="empty-state">
+                  <h3>Selecciona un chat</h3>
+                  <p>para ver los mensajes</p>
+                </div>
+              </div>
+              <div class="message-input-container">
+                <input
+                  type="text"
+                  id="messageInput"
+                  class="message-input"
+                  placeholder="Escribe un mensaje..."
+                  onkeypress="if(event.key==='Enter') sendMessage()"
+                />
+                <button class="send-btn" onclick="sendMessage()">Enviar</button>
+              </div>
+            </div>
           </div>
+
+      <!-- Panel de asociaciones -->
+      <div id="associationsPanel" class="associations-panel">
+        <div class="associations-table">
+          <h2>🔗 Asociaciones de Teléfonos</h2>
+          <p style="color: #8696a0; margin-bottom: 20px">
+            Asocia números LID con números reales para una mejor identificación
+            de usuarios.
+          </p>
+
+          <!-- Controles de filtro y búsqueda -->
+          <div class="associations-controls">
+            <div class="search-container">
+              <input
+                type="text"
+                id="associationsSearch"
+                placeholder="🔍 Buscar por nombre o número..."
+              />
+            </div>
+            <div class="filter-buttons">
+              <button class="filter-btn active" data-filter="all">Todos</button>
+              <button class="filter-btn" data-filter="no-association">
+                Sin asociación
+              </button>
+            </div>
+          </div>
+
+          <!-- Contador de resultados -->
+          <div id="resultsCounter" class="results-counter"></div>
+
+          <table id="associationsTable">
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>ID (Sender Phone)</th>
+                <th>Teléfono Real</th>
+                <th>Grupo</th>
+                <th>Mensajes</th>
+                <th>Último Mensaje</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="associationsTableBody">
+              <!-- Los datos se cargarán dinámicamente -->
+            </tbody>
+          </table>
         </div>
-        <div class="message-input-container">
-          <input
-            type="text"
-            id="messageInput"
-            class="message-input"
-            placeholder="Escribe un mensaje..."
-            onkeypress="if(event.key==='Enter') sendMessage()"
-          />
-          <button class="send-btn" onclick="sendMessage()">Enviar</button>
         </div>
       </div>
     </div>
@@ -417,6 +926,323 @@
     <script src="wails/runtime/runtime.js"></script>
     <script>
       let currentChatJID = null;
+      let associationsData = [];
+      let currentFilter = "all";
+      let searchTerm = "";
+
+      // ===== FUNCIONES PARA PESTAÑAS =====
+      function showTab(tabName) {
+        console.log("Cambiando a pestaña:", tabName);
+        
+        // Ocultar todos los paneles
+        document.getElementById("messagesPanel").classList.remove("active");
+        document.getElementById("associationsPanel").classList.remove("active");
+
+        // Remover clase active de todas las pestañas
+        document.querySelectorAll(".tab").forEach((tab) => {
+          tab.classList.remove("active");
+        });
+
+        // Mostrar el panel correspondiente
+        if (tabName === "messages") {
+          document.getElementById("messagesPanel").classList.add("active");
+          document
+            .querySelector(".tab[onclick=\"showTab('messages')\"]")
+            .classList.add("active");
+          console.log("Panel de mensajes activado");
+        } else if (tabName === "associations") {
+          document.getElementById("associationsPanel").classList.add("active");
+          document
+            .querySelector(".tab[onclick=\"showTab('associations')\"]")
+            .classList.add("active");
+          console.log("Panel de asociaciones activado");
+          loadAssociations();
+        }
+      }
+
+      // ===== FUNCIONES PARA ASOCIACIONES =====
+      async function loadAssociations() {
+        try {
+          const senders = await window.go.main.App.GetSendersForAssociation();
+          associationsData = senders;
+          setupAssociationsListeners();
+          renderAssociationsTable();
+        } catch (error) {
+          console.error("Error loading associations:", error);
+          showNotification(
+            "Error al cargar asociaciones: " + error.message,
+            "error"
+          );
+        }
+      }
+
+      function filterAssociations() {
+        let filtered = associationsData;
+
+        // Aplicar filtro de asociación
+        if (currentFilter === "no-association") {
+          filtered = filtered.filter(
+            (sender) => !sender.real_phone || sender.real_phone === ""
+          );
+        }
+
+        // Aplicar búsqueda
+        if (searchTerm) {
+          const term = searchTerm.toLowerCase();
+          filtered = filtered.filter(
+            (sender) =>
+              (sender.sender_name &&
+                sender.sender_name.toLowerCase().includes(term)) ||
+              (sender.sender_phone &&
+                sender.sender_phone.toLowerCase().includes(term)) ||
+              (sender.real_phone &&
+                sender.real_phone.toLowerCase().includes(term)) ||
+              (sender.last_group_name &&
+                sender.last_group_name.toLowerCase().includes(term))
+          );
+        }
+
+        return filtered;
+      }
+
+      function setupAssociationsListeners() {
+        // Event listener para búsqueda
+        const searchInput = document.getElementById("associationsSearch");
+        if (searchInput && !searchInput.hasListener) {
+          searchInput.addEventListener("input", (e) => {
+            searchTerm = e.target.value;
+            renderAssociationsTable();
+          });
+          searchInput.hasListener = true;
+        }
+
+        // Event listeners para filtros
+        document.querySelectorAll(".filter-btn").forEach((btn) => {
+          if (!btn.hasListener) {
+            btn.addEventListener("click", function () {
+              document
+                .querySelectorAll(".filter-btn")
+                .forEach((b) => b.classList.remove("active"));
+              this.classList.add("active");
+              currentFilter = this.dataset.filter;
+              renderAssociationsTable();
+            });
+            btn.hasListener = true;
+          }
+        });
+      }
+
+      function renderAssociationsTable() {
+        const tbody = document.getElementById("associationsTableBody");
+        const counterDiv = document.getElementById("resultsCounter");
+        tbody.innerHTML = "";
+
+        // Obtener datos filtrados
+        const filteredData = filterAssociations();
+
+        // Actualizar contador
+        if (associationsData.length === 0) {
+          counterDiv.textContent = "No hay datos de asociaciones disponibles";
+        } else {
+          const total = associationsData.length;
+          const showing = filteredData.length;
+          if (showing === total) {
+            counterDiv.textContent = `Mostrando ${total} remitente${
+              total !== 1 ? "s" : ""
+            }`;
+          } else {
+            counterDiv.textContent = `Mostrando ${showing} de ${total} remitente${
+              total !== 1 ? "s" : ""
+            }`;
+          }
+        }
+
+        if (filteredData.length === 0) {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="7" style="text-align: center; color: #8696a0; padding: 40px;">
+                ${
+                  associationsData.length === 0
+                    ? "No hay datos de asociaciones disponibles"
+                    : "No se encontraron resultados con los filtros aplicados"
+                }
+              </td>
+            </tr>
+          `;
+          return;
+        }
+
+        // Agrupar por nombre de grupo
+        const groupedData = {};
+        filteredData.forEach((sender) => {
+          const groupName = sender.last_group_name || "Sin grupo";
+          if (!groupedData[groupName]) {
+            groupedData[groupName] = [];
+          }
+          groupedData[groupName].push(sender);
+        });
+
+        // Ordenar grupos por cantidad de mensajes (descendente)
+        const sortedGroups = Object.keys(groupedData).sort((a, b) => {
+          const aTotal = groupedData[a].reduce((sum, sender) => sum + sender.message_count, 0);
+          const bTotal = groupedData[b].reduce((sum, sender) => sum + sender.message_count, 0);
+          return bTotal - aTotal;
+        });
+
+        // Renderizar cada grupo
+        sortedGroups.forEach((groupName) => {
+          const groupSenders = groupedData[groupName];
+          
+          // Crear header del grupo
+          const groupHeader = document.createElement("tr");
+          groupHeader.innerHTML = `
+            <td colspan="7" class="group-header">
+              📱 ${groupName}
+              <span class="group-count">${groupSenders.length}</span>
+            </td>
+          `;
+          tbody.appendChild(groupHeader);
+
+          // Renderizar remitentes del grupo
+          groupSenders.forEach((sender) => {
+            const originalIndex = associationsData.findIndex(
+              (s) => s.sender_phone === sender.sender_phone
+            );
+            const row = document.createElement("tr");
+            row.innerHTML = `
+              <td>
+                <strong style="color: #e9edef;">${
+                  sender.sender_name || "Sin nombre"
+                }</strong>
+              </td>
+              <td>
+                <code style="background: #3b4043; padding: 4px 8px; border-radius: 4px; color: #8696a0;">
+                  ${sender.sender_phone}
+                </code>
+              </td>
+              <td>
+                <input 
+                  type="tel" 
+                  class="phone-input" 
+                  value="${sender.real_phone || ""}" 
+                  placeholder="+1234567890"
+                  id="phoneInput_${originalIndex}"
+                />
+              </td>
+              <td>
+                <span style="color: #8696a0; font-size: 12px; font-weight: 500;">
+                  ${sender.last_group_name || "Sin grupo"}
+                </span>
+              </td>
+              <td>
+                <span class="message-count">${sender.message_count}</span>
+              </td>
+              <td>
+                <span class="last-message">${formatDateTime(
+                  sender.last_message
+                )}</span>
+              </td>
+              <td>
+                <button class="save-btn" onclick="saveAssociation(${originalIndex})">
+                  💾 Guardar
+                </button>
+                ${
+                  sender.real_phone
+                    ? `
+                  <button class="delete-btn" onclick="deleteAssociation('${sender.sender_phone}')">
+                    🗑️ Eliminar
+                  </button>
+                `
+                    : ""
+                }
+              </td>
+            `;
+            tbody.appendChild(row);
+          });
+        });
+      }
+
+      async function saveAssociation(index) {
+        const sender = associationsData[index];
+        const phoneInput = document.getElementById(`phoneInput_${index}`);
+        const realPhone = phoneInput.value.trim();
+
+        if (!realPhone) {
+          showNotification("Por favor ingresa un número de teléfono", "error");
+          return;
+        }
+
+        try {
+          // Asegurar que los parámetros no sean undefined
+          const senderPhone = sender.sender_phone || "";
+          const senderName = sender.sender_name || "Sin nombre";
+
+          console.log("Guardando asociación:", {
+            senderPhone,
+            realPhone,
+            senderName,
+          });
+
+          const result = await window.go.main.App.SavePhoneAssociation(
+            senderPhone,
+            realPhone,
+            senderName
+          );
+
+          console.log("SavePhoneAssociation result:", result);
+          showNotification("✅ Asociación guardada correctamente", "success");
+
+          // Actualizar los datos localmente
+          sender.real_phone = realPhone;
+          renderAssociationsTable();
+        } catch (error) {
+          console.error("Error saving association:", error);
+          const errorMsg =
+            error?.message || error?.toString() || "Error desconocido";
+          showNotification("Error al guardar asociación: " + errorMsg, "error");
+        }
+      }
+
+      async function deleteAssociation(senderPhone) {
+        if (
+          !confirm("¿Estás seguro de que quieres eliminar esta asociación?")
+        ) {
+          return;
+        }
+
+        try {
+          await window.go.main.App.DeletePhoneAssociation(senderPhone);
+
+          showNotification("🗑️ Asociación eliminada correctamente", "success");
+
+          // Recargar los datos
+          await loadAssociations();
+        } catch (error) {
+          console.error("Error deleting association:", error);
+          const errorMsg =
+            error?.message || error?.toString() || "Error desconocido";
+          showNotification(
+            "Error al eliminar asociación: " + errorMsg,
+            "error"
+          );
+        }
+      }
+
+      function formatDateTime(dateString) {
+        if (!dateString) return "Sin mensajes";
+        const date = new Date(dateString);
+        // Verificar si es una fecha válida y no es la fecha vacía de Go (0001-01-01)
+        if (isNaN(date.getTime()) || date.getFullYear() === 1) {
+          return "Sin mensajes";
+        }
+        return date.toLocaleString("es-ES", {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+      }
 
       // Inicializar al cargar
       window.addEventListener("DOMContentLoaded", () => {
@@ -447,6 +1273,12 @@
         if (currentChatJID === message.chat_jid) {
           loadMessages(currentChatJID);
         }
+      });
+
+      // Escuchar eventos de asociación de teléfono
+      window.runtime.EventsOn("phone-association-needed", (request) => {
+        console.log("Solicitud de asociación:", request);
+        showPhoneAssociationModal(request);
       });
 
       async function checkConnection() {
@@ -563,11 +1395,19 @@
 
             let content = "";
             if (!msg.is_from_me) {
-              // Formatear el teléfono con +
-              const phone = msg.sender.startsWith("+")
-                ? msg.sender
-                : `+${msg.sender}`;
-              content += `<div class="message-sender">${phone}</div>`;
+              // Mostrar nombre y teléfono/LID
+              let senderDisplay = msg.sender_name || msg.sender_phone;
+
+              // Si el phone parece un número real (no LID largo), mostrarlo
+              if (msg.sender_phone && msg.sender_phone.length <= 15) {
+                // Es un número de teléfono real
+                senderDisplay = `${msg.sender_name} (+${msg.sender_phone})`;
+              } else if (msg.sender_phone && msg.sender_phone.length > 15) {
+                // Es un LID - mostrar nombre + indicador de privacidad
+                senderDisplay = `${msg.sender_name} (🔒 LID: ${msg.sender_phone})`;
+              }
+
+              content += `<div class="message-sender">${senderDisplay}</div>`;
             }
             if (msg.content) {
               content += `<div class="message-content">${escapeHtml(
@@ -649,6 +1489,160 @@
           text
         )}" alt="QR Code" style="width: 100%; height: 100%;">`;
       }
+
+      // ===== FUNCIONES DE UTILIDAD =====
+
+      // Mostrar notificaciones
+      function showNotification(message, type = "success") {
+        // Crear elemento de notificación
+        const notification = document.createElement("div");
+        notification.className = "notification";
+        notification.textContent = message;
+
+        // Cambiar color según tipo
+        if (type === "error") {
+          notification.style.backgroundColor = "#dc3545";
+        } else if (type === "warning") {
+          notification.style.backgroundColor = "#ffc107";
+          notification.style.color = "#000";
+        }
+
+        // Agregar al DOM
+        document.body.appendChild(notification);
+
+        // Remover después de 4 segundos
+        setTimeout(() => {
+          notification.remove();
+        }, 4000);
+      }
+
+      // ===== FUNCIONES PARA ASOCIACIÓN DE TELÉFONO =====
+      let currentAssociationRequest = null;
+
+      // Mostrar modal de asociación
+      function showPhoneAssociationModal(request) {
+        currentAssociationRequest = request;
+
+        // Obtener nombre del grupo
+        const groupName = getGroupName(request.group_jid) || request.group_jid;
+
+        document.getElementById("modalDisplayName").textContent =
+          request.display_name || "Usuario";
+        document.getElementById("modalGroupName").textContent = groupName;
+        document.getElementById("modalLID").textContent = request.lid;
+        document.getElementById("phoneAssociationModal").style.display =
+          "block";
+
+        // Enfocar el input
+        setTimeout(() => {
+          document.getElementById("phoneNumberInput").focus();
+        }, 100);
+      }
+
+      // Guardar asociación
+      async function savePhoneAssociation() {
+        const phoneNumber = document
+          .getElementById("phoneNumberInput")
+          .value.trim();
+
+        if (!phoneNumber) {
+          showNotification("Por favor ingresa un número de teléfono", "error");
+          return;
+        }
+
+        // Validar formato básico del número
+        if (!/^[\+]?[0-9\s\-\(\)]{10,}$/.test(phoneNumber)) {
+          showNotification(
+            "Por favor ingresa un número de teléfono válido",
+            "error"
+          );
+          return;
+        }
+
+        try {
+          await window.go.main.App.SavePhoneAssociation(
+            currentAssociationRequest.lid,
+            phoneNumber,
+            currentAssociationRequest.display_name || "Usuario",
+            currentAssociationRequest.group_jid
+          );
+
+          closePhoneModal();
+          showNotification("✅ Número asociado correctamente");
+
+          // Actualizar mensajes si es necesario
+          if (currentChat) {
+            loadMessages(currentChat.jid);
+          }
+        } catch (error) {
+          console.error("Error al guardar asociación:", error);
+          showNotification("Error al guardar: " + error.message, "error");
+        }
+      }
+
+      // Omitir asociación
+      function skipPhoneAssociation() {
+        closePhoneModal();
+        showNotification("⏭️ Asociación omitida");
+      }
+
+      // Cerrar modal
+      function closePhoneModal() {
+        document.getElementById("phoneAssociationModal").style.display = "none";
+        document.getElementById("phoneNumberInput").value = "";
+        currentAssociationRequest = null;
+      }
+
+      // Cerrar modal al hacer clic fuera
+      window.onclick = function (event) {
+        const modal = document.getElementById("phoneAssociationModal");
+        if (event.target === modal) {
+          closePhoneModal();
+        }
+      };
+
+      // Cerrar modal con ESC
+      document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") {
+          closePhoneModal();
+        }
+      });
+
+      // Enviar con Enter
+      document
+        .getElementById("phoneNumberInput")
+        .addEventListener("keydown", function (event) {
+          if (event.key === "Enter") {
+            savePhoneAssociation();
+          }
+        });
     </script>
+
+    <!-- Modal para asociación de teléfono -->
+    <div id="phoneAssociationModal" class="modal">
+      <div class="modal-content">
+        <h3>🔗 Asociar Número de Teléfono</h3>
+        <p><strong>Usuario:</strong> <span id="modalDisplayName"></span></p>
+        <p><strong>Grupo:</strong> <span id="modalGroupName"></span></p>
+        <p><strong>LID:</strong> <span id="modalLID"></span></p>
+
+        <div class="form-group">
+          <label>Número de teléfono real:</label>
+          <input type="tel" id="phoneNumberInput" placeholder="+1234567890" />
+        </div>
+
+        <div class="modal-buttons">
+          <button onclick="savePhoneAssociation()" class="btn-primary">
+            💾 Guardar
+          </button>
+          <button onclick="skipPhoneAssociation()" class="btn-secondary">
+            ⏭️ Omitir
+          </button>
+          <button onclick="closePhoneModal()" class="btn-cancel">
+            ❌ Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
   </body>
 </html>

@@ -18,7 +18,7 @@ func main() {
 
 	// Create application with options
 	err := wails.Run(&options.App{
-		Title:  "Loader Meow - WhatsApp Desktop",
+		Title:  "CaricaLoader Meow - WhatsApp Desktop",
 		Width:  900,
 		Height: 600,
 		AssetServer: &assetserver.Options{
