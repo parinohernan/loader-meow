@@ -20,13 +20,14 @@ import (
 
 // WhatsAppService maneja la conexión y operaciones de WhatsApp
 type WhatsAppService struct {
-	client       *whatsmeow.Client
-	messageStore *MessageStore
-	logger       waLog.Logger
-	qrChan       <-chan whatsmeow.QRChannelItem
-	onMessage    func(ChatMessage)
-	onQRCode     func(string)
-	onConnected  func()
+	client           *whatsmeow.Client
+	messageStore     *MessageStore
+	messageProcessor *MessageProcessor
+	logger           waLog.Logger
+	qrChan           <-chan whatsmeow.QRChannelItem
+	onMessage        func(ChatMessage)
+	onQRCode         func(string)
+	onConnected      func()
 	onPhoneAssociationNeeded func(PhoneAssociationRequest)
 }
 
@@ -43,6 +44,12 @@ type ChatMessage struct {
 	MediaType   string    `json:"media_type"`
 	Filename    string    `json:"filename"`
 	Processed   bool      `json:"processed"`
+}
+
+// ProcessableMessage representa un mensaje que puede ser procesado por IA
+type ProcessableMessage struct {
+	ChatMessage
+	RealPhone string `json:"real_phone"` // Teléfono real asociado
 }
 
 // Chat representa un chat en la lista
@@ -102,6 +109,9 @@ func NewMessageStore() (*MessageStore, error) {
 			file_enc_sha256 LONGBLOB,
 			file_length BIGINT,
 			processed BOOLEAN DEFAULT FALSE,
+			processing_attempts INT DEFAULT 0,
+			last_processing_error TEXT,
+			last_processing_attempt TIMESTAMP NULL,
 			PRIMARY KEY (id, chat_jid),
 			FOREIGN KEY (chat_jid) REFERENCES chats(jid) ON DELETE CASCADE
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
@@ -115,6 +125,24 @@ func NewMessageStore() (*MessageStore, error) {
 			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 			INDEX idx_sender_phone (sender_phone),
 			INDEX idx_real_phone (real_phone)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+		`CREATE TABLE IF NOT EXISTS ai_processing_results (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			message_id VARCHAR(255),
+			chat_jid VARCHAR(255),
+			content TEXT,
+			sender_phone VARCHAR(100),
+			real_phone VARCHAR(50),
+			ai_response TEXT,
+			status VARCHAR(50),
+			error_message TEXT,
+			supabase_ids TEXT,
+			processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			INDEX idx_message_chat (message_id, chat_jid),
+			INDEX idx_status (status),
+			INDEX idx_processed_at (processed_at),
+			FOREIGN KEY (message_id, chat_jid) REFERENCES messages(id, chat_jid) ON DELETE CASCADE
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
 	}
 
@@ -144,6 +172,12 @@ func NewMessageStore() (*MessageStore, error) {
 		}
 	}
 
+	// Ejecutar migraciones para agregar columnas nuevas si no existen
+	if err := runMigrations(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to run migrations: %v", err)
+	}
+
 	return &MessageStore{db: db}, nil
 }
 
@@ -157,6 +191,44 @@ func isIndexExistsError(err error) bool {
 	return strings.Contains(errMsg, "Duplicate key name") || 
 	       strings.Contains(errMsg, "already exists") ||
 	       strings.Contains(errMsg, "Error 1061")
+}
+
+// runMigrations ejecuta migraciones de base de datos
+func runMigrations(db *sql.DB) error {
+	// Verificar si las columnas ya existen
+	columns := []struct {
+		name         string
+		definition   string
+	}{
+		{"processing_attempts", "INT DEFAULT 0"},
+		{"last_processing_error", "TEXT"},
+		{"last_processing_attempt", "TIMESTAMP NULL"},
+	}
+	
+	for _, col := range columns {
+		// Intentar agregar la columna
+		alterQuery := fmt.Sprintf("ALTER TABLE messages ADD COLUMN %s %s", col.name, col.definition)
+		_, err := db.Exec(alterQuery)
+		
+		// Ignorar error si la columna ya existe
+		if err != nil && !isColumnExistsError(err) {
+			return fmt.Errorf("failed to add column %s: %v", col.name, err)
+		}
+	}
+	
+	return nil
+}
+
+// isColumnExistsError verifica si el error es porque la columna ya existe
+func isColumnExistsError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errMsg := err.Error()
+	// MariaDB/MySQL error codes para columna duplicada
+	return strings.Contains(errMsg, "Duplicate column name") || 
+	       strings.Contains(errMsg, "column already exists") ||
+	       strings.Contains(errMsg, "Error 1060")
 }
 
 // Close cierra la base de datos
@@ -288,11 +360,170 @@ func (store *MessageStore) GetUnprocessedMessages(limit int) ([]ChatMessage, err
 	return messages, nil
 }
 
+// GetProcessableMessages obtiene mensajes que pueden ser procesados por IA
+func (store *MessageStore) GetProcessableMessages(limit int) ([]ProcessableMessage, error) {
+	query := `
+		SELECT m.id, m.chat_jid, m.sender_phone, m.sender_name, m.content, 
+		       m.timestamp, m.is_from_me, m.media_type, m.filename, m.processed,
+		       pa.real_phone
+		FROM messages m
+		INNER JOIN phone_associations pa ON m.sender_phone = pa.sender_phone
+		WHERE m.processed = 0 
+		  AND m.content IS NOT NULL 
+		  AND m.content != ''
+		  AND pa.real_phone IS NOT NULL
+		  AND pa.real_phone != ''
+		  AND (m.processing_attempts < 3 OR m.processing_attempts IS NULL)
+		ORDER BY m.timestamp ASC
+		LIMIT ?
+	`
+	
+	rows, err := store.db.Query(query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var messages []ProcessableMessage
+	for rows.Next() {
+		var msg ProcessableMessage
+		err := rows.Scan(&msg.ID, &msg.ChatJID, &msg.SenderPhone, &msg.SenderName, &msg.Content, 
+			&msg.Timestamp, &msg.IsFromMe, &msg.MediaType, &msg.Filename, &msg.Processed, &msg.RealPhone)
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, msg)
+	}
+	return messages, nil
+}
+
+// GetProcessableMessagesCount obtiene el conteo de mensajes procesables
+func (store *MessageStore) GetProcessableMessagesCount() (int, error) {
+	query := `
+		SELECT COUNT(*)
+		FROM messages m
+		INNER JOIN phone_associations pa ON m.sender_phone = pa.sender_phone
+		WHERE m.processed = 0 
+		  AND m.content IS NOT NULL 
+		  AND m.content != ''
+		  AND pa.real_phone IS NOT NULL
+		  AND pa.real_phone != ''
+	`
+	
+	var count int
+	err := store.db.QueryRow(query).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+// GetUnprocessedMessagesWithRealPhone obtiene mensajes sin procesar con teléfono real
+func (store *MessageStore) GetUnprocessedMessagesWithRealPhone(limit int) ([]ProcessableMessage, error) {
+	query := `
+		SELECT m.id, m.chat_jid, m.sender_phone, m.sender_name, m.content, 
+		       m.timestamp, m.is_from_me, m.media_type, m.filename, m.processed,
+		       pa.real_phone, COALESCE(m.processing_attempts, 0) as processing_attempts
+		FROM messages m
+		INNER JOIN phone_associations pa ON m.sender_phone = pa.sender_phone
+		WHERE m.processed = 0 
+		  AND m.content IS NOT NULL 
+		  AND m.content != ''
+		  AND pa.real_phone IS NOT NULL
+		  AND pa.real_phone != ''
+		ORDER BY m.timestamp DESC
+		LIMIT ?
+	`
+	
+	rows, err := store.db.Query(query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var messages []ProcessableMessage
+	for rows.Next() {
+		var msg ProcessableMessage
+		var attempts int
+		
+		err := rows.Scan(&msg.ID, &msg.ChatJID, &msg.SenderPhone, &msg.SenderName, &msg.Content, 
+			&msg.Timestamp, &msg.IsFromMe, &msg.MediaType, &msg.Filename, &msg.Processed, 
+			&msg.RealPhone, &attempts)
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, msg)
+	}
+	return messages, nil
+}
+
 // MarkMessageAsProcessed marca un mensaje como procesado
 func (store *MessageStore) MarkMessageAsProcessed(messageID, chatJID string) error {
 	_, err := store.db.Exec(
 		`UPDATE messages SET processed = 1 WHERE id = ? AND chat_jid = ?`,
 		messageID, chatJID,
+	)
+	return err
+}
+
+// IncrementProcessingAttempt incrementa el contador de intentos de procesamiento
+func (store *MessageStore) IncrementProcessingAttempt(messageID, chatJID, errorMsg string) error {
+	_, err := store.db.Exec(
+		`UPDATE messages 
+		 SET processing_attempts = processing_attempts + 1,
+		     last_processing_error = ?,
+		     last_processing_attempt = NOW()
+		 WHERE id = ? AND chat_jid = ?`,
+		errorMsg, messageID, chatJID,
+	)
+	return err
+}
+
+// MarkMessageAsFailedAfterRetries marca un mensaje como procesado después de múltiples fallos
+func (store *MessageStore) MarkMessageAsFailedAfterRetries(messageID, chatJID string) error {
+	_, err := store.db.Exec(
+		`UPDATE messages 
+		 SET processed = 1,
+		     last_processing_error = 'Demasiados intentos fallidos'
+		 WHERE id = ? AND chat_jid = ?`,
+		messageID, chatJID,
+	)
+	return err
+}
+
+// ResetProcessingAttempts resetea el contador de intentos para reprocesar un mensaje
+func (store *MessageStore) ResetProcessingAttempts(messageID, chatJID string) error {
+	_, err := store.db.Exec(
+		`UPDATE messages 
+		 SET processing_attempts = 0,
+		     processed = 0,
+		     last_processing_error = NULL,
+		     last_processing_attempt = NULL
+		 WHERE id = ? AND chat_jid = ?`,
+		messageID, chatJID,
+	)
+	return err
+}
+
+// DeleteMessage elimina un mensaje de la base de datos
+func (store *MessageStore) DeleteMessage(messageID, chatJID string) error {
+	_, err := store.db.Exec(
+		`DELETE FROM messages WHERE id = ? AND chat_jid = ?`,
+		messageID, chatJID,
+	)
+	return err
+}
+
+// UpdateMessageContent actualiza el contenido de un mensaje
+func (store *MessageStore) UpdateMessageContent(messageID, chatJID, newContent string) error {
+	_, err := store.db.Exec(
+		`UPDATE messages 
+		 SET content = ?,
+		     processing_attempts = 0,
+		     processed = 0,
+		     last_processing_error = NULL
+		 WHERE id = ? AND chat_jid = ?`,
+		newContent, messageID, chatJID,
 	)
 	return err
 }
@@ -370,10 +601,23 @@ func NewWhatsAppService() (*WhatsAppService, error) {
 		return nil, fmt.Errorf("failed to initialize message store: %v", err)
 	}
 
+	// Inicializar API keys manager
+	keysManager, err := NewAPIKeysManager()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create API keys manager: %v", err)
+	}
+
+	// Inicializar message processor
+	messageProcessor, err := NewMessageProcessor(messageStore, logger, keysManager)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create message processor: %v", err)
+	}
+
 	service := &WhatsAppService{
-		client:       client,
-		messageStore: messageStore,
-		logger:       logger,
+		client:           client,
+		messageStore:     messageStore,
+		messageProcessor: messageProcessor,
+		logger:           logger,
 	}
 
 	// Configurar event handler
@@ -806,6 +1050,46 @@ func (s *WhatsAppService) Connect() error {
 	}
 	
 	return nil
+}
+
+// StartAutoProcessor inicia el procesamiento automático en background
+func (s *WhatsAppService) StartAutoProcessor() {
+	if s.messageProcessor == nil {
+		s.logger.Warnf("Message processor not initialized, cannot start auto processing")
+		return
+	}
+	
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		
+		s.logger.Infof("🤖 Iniciando procesamiento automático cada 5 minutos")
+		
+		for range ticker.C {
+			// Procesar hasta 10 mensajes cada 5 minutos
+			results, err := s.messageProcessor.ProcessPendingMessages(10)
+			if err != nil {
+				s.logger.Errorf("Error en procesamiento automático: %v", err)
+				continue
+			}
+			
+			if len(results) > 0 {
+				successCount := 0
+				errorCount := 0
+				
+				for _, result := range results {
+					if result.Status == "success" {
+						successCount++
+					} else {
+						errorCount++
+					}
+				}
+				
+				s.logger.Infof("🤖 Procesamiento automático completado: %d exitosos, %d errores", 
+					successCount, errorCount)
+			}
+		}
+	}()
 }
 
 // IsConnected verifica si el cliente está conectado

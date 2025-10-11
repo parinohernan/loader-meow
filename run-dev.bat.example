@@ -1,5 +1,6 @@
 @echo off
-REM Script para ejecutar la aplicación con variables de entorno de MySQL
+setlocal enabledelayedexpansion
+REM Script para ejecutar la aplicación con variables de entorno de MySQL e IA
 REM Copia este archivo a run-dev.bat y actualiza con tus credenciales
 
 echo ========================================
@@ -7,13 +8,27 @@ echo   LOADER MEOW - DESARROLLO
 echo ========================================
 echo.
 
-REM Configurar variables de entorno directamente
+REM Configurar variables de entorno de MySQL
 set DB_HOST=localhost
 set DB_PORT=3306
 set DB_USER=root
 set DB_PASSWORD=tu_password_aqui
 set DB_NAME=caricaloader
 set DB_CHARSET=utf8mb4
+
+REM Cargar variables de entorno de IA desde ai-config.env
+if exist ai-config.env (
+    echo Cargando configuracion de IA...
+    for /f "usebackq eol=# delims== tokens=1,*" %%a in ("ai-config.env") do (
+        if not "%%a"=="" if not "%%b"=="" (
+            set "%%a=%%b"
+            echo   - %%a configurado
+        )
+    )
+    echo Configuracion de IA cargada
+) else (
+    echo ADVERTENCIA: ai-config.env no encontrado. El procesamiento con IA no estara disponible.
+)
 
 echo Configuracion MySQL:
 echo - Host: %DB_HOST%

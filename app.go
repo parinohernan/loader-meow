@@ -11,9 +11,10 @@ import (
 
 // App struct
 type App struct {
-	ctx       context.Context
-	waService *WhatsAppService
-	qrCode    string
+	ctx              context.Context
+	waService        *WhatsAppService
+	messageProcessor *MessageProcessor
+	qrCode           string
 }
 
 // SenderInfo representa información de un remitente (alias para frontend)
@@ -48,6 +49,9 @@ func (a *App) InitWhatsApp() error {
 
 	a.waService = waService
 
+	// El message processor ya está inicializado en el waService
+	a.messageProcessor = waService.messageProcessor
+
 	// Configurar callbacks
 	waService.onMessage = func(msg ChatMessage) {
 		// Formatear el remitente mostrando nombre y teléfono
@@ -66,6 +70,9 @@ func (a *App) InitWhatsApp() error {
 	waService.onConnected = func() {
 		runtime.LogInfo(a.ctx, "Conectado a WhatsApp!")
 		runtime.EventsEmit(a.ctx, "connected")
+		
+		// Procesamiento automático desactivado - ahora es manual
+		// waService.StartAutoProcessor()
 	}
 
 	waService.onQRCode = func(qr string) {
@@ -284,6 +291,169 @@ func (a *App) DeletePhoneAssociation(senderPhone string) error {
 	}
 	
 	return a.waService.DeletePhoneAssociation(senderPhone)
+}
+
+// ===== FUNCIONES PARA PROCESAMIENTO CON IA =====
+
+// ProcessMessages procesa mensajes pendientes con IA
+func (a *App) ProcessMessages(limit int) ([]ProcessingResult, error) {
+	if a.messageProcessor == nil {
+		return nil, fmt.Errorf("message processor not initialized")
+	}
+	
+	return a.messageProcessor.ProcessPendingMessages(limit)
+}
+
+// GetProcessingResults obtiene resultados de procesamiento
+func (a *App) GetProcessingResults(limit int) ([]ProcessingResult, error) {
+	if a.messageProcessor == nil {
+		return nil, fmt.Errorf("message processor not initialized")
+	}
+	
+	return a.messageProcessor.GetProcessingResults(limit)
+}
+
+// GetProcessableMessagesCount obtiene el conteo de mensajes procesables
+func (a *App) GetProcessableMessagesCount() (int, error) {
+	if a.messageProcessor == nil {
+		return 0, fmt.Errorf("message processor not initialized")
+	}
+	
+	return a.messageProcessor.GetProcessableMessagesCount()
+}
+
+// GetProcessingStats obtiene estadísticas de procesamiento
+func (a *App) GetProcessingStats() (map[string]interface{}, error) {
+	if a.messageProcessor == nil {
+		return nil, fmt.Errorf("message processor not initialized")
+	}
+	
+	return a.messageProcessor.GetProcessingStats()
+}
+
+// ===== FUNCIONES PARA GESTIÓN DE API KEYS =====
+
+// GetGeminiKeys obtiene todas las API keys de Gemini configuradas
+func (a *App) GetGeminiKeys() ([]GeminiKey, error) {
+	if a.waService == nil || a.waService.messageProcessor == nil {
+		return []GeminiKey{}, nil
+	}
+	
+	keysManager, err := NewAPIKeysManager()
+	if err != nil {
+		return nil, err
+	}
+	
+	return keysManager.GetAllGeminiKeys(), nil
+}
+
+// AddGeminiKey agrega una nueva API key de Gemini
+func (a *App) AddGeminiKey(key, name string) error {
+	keysManager, err := NewAPIKeysManager()
+	if err != nil {
+		return err
+	}
+	
+	return keysManager.AddGeminiKey(key, name)
+}
+
+// SetActiveGeminiKey establece una API key como activa
+func (a *App) SetActiveGeminiKey(index int) error {
+	keysManager, err := NewAPIKeysManager()
+	if err != nil {
+		return err
+	}
+	
+	return keysManager.SetActiveKey(index)
+}
+
+// RemoveGeminiKey elimina una API key de Gemini
+func (a *App) RemoveGeminiKey(index int) error {
+	keysManager, err := NewAPIKeysManager()
+	if err != nil {
+		return err
+	}
+	
+	return keysManager.RemoveGeminiKey(index)
+}
+
+// GetAPIKeysConfig obtiene la configuración completa de API keys
+func (a *App) GetAPIKeysConfig() (*APIKeysConfig, error) {
+	keysManager, err := NewAPIKeysManager()
+	if err != nil {
+		return nil, err
+	}
+	
+	return keysManager.GetConfig(), nil
+}
+
+// ===== FUNCIONES PARA GESTIÓN DE MENSAJES =====
+
+// ReprocessMessage resetea el contador de intentos para reprocesar un mensaje
+func (a *App) ReprocessMessage(messageID, chatJID string) error {
+	if a.waService == nil {
+		return fmt.Errorf("WhatsApp service not initialized")
+	}
+	
+	return a.waService.messageStore.ResetProcessingAttempts(messageID, chatJID)
+}
+
+// DeleteMessage elimina un mensaje de la base de datos
+func (a *App) DeleteMessage(messageID, chatJID string) error {
+	if a.waService == nil {
+		return fmt.Errorf("WhatsApp service not initialized")
+	}
+	
+	return a.waService.messageStore.DeleteMessage(messageID, chatJID)
+}
+
+// UpdateMessageContent actualiza el contenido de un mensaje
+func (a *App) UpdateMessageContent(messageID, chatJID, newContent string) error {
+	if a.waService == nil {
+		return fmt.Errorf("WhatsApp service not initialized")
+	}
+	
+	return a.waService.messageStore.UpdateMessageContent(messageID, chatJID, newContent)
+}
+
+// GetMessageDetails obtiene los detalles completos de un mensaje para edición
+func (a *App) GetMessageDetails(messageID, chatJID string) (*ChatMessage, error) {
+	if a.waService == nil {
+		return nil, fmt.Errorf("WhatsApp service not initialized")
+	}
+	
+	// Obtener el mensaje de la base de datos
+	messages, err := a.waService.messageStore.GetMessages(chatJID, 1000)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Buscar el mensaje específico
+	for _, msg := range messages {
+		if msg.ID == messageID {
+			return &msg, nil
+		}
+	}
+	
+	return nil, fmt.Errorf("message not found")
+}
+
+// GetUnprocessedMessagesWithRealPhone obtiene mensajes sin procesar con teléfono real
+func (a *App) GetUnprocessedMessagesWithRealPhone(limit int) ([]ProcessableMessage, error) {
+	if a.waService == nil {
+		return nil, fmt.Errorf("WhatsApp service not initialized")
+	}
+	
+	return a.waService.messageStore.GetUnprocessedMessagesWithRealPhone(limit)
+}
+
+// ProcessSingleMessage procesa un solo mensaje por ID
+func (a *App) ProcessSingleMessage(messageID, chatJID string) (ProcessingResult, error) {
+	if a.messageProcessor == nil {
+		return ProcessingResult{}, fmt.Errorf("message processor not initialized")
+	}
+	
+	return a.messageProcessor.ProcessSingleMessage(messageID, chatJID)
 }
 
 

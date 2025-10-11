@@ -298,6 +298,457 @@
         display: flex;
       }
 
+      /* Panel de Procesamiento IA */
+      .processing-panel {
+        display: none;
+        flex-direction: column;
+        background: #0b141a;
+        height: 100vh;
+        width: calc(100% - 140px);
+        overflow-y: auto;
+        overflow-x: hidden;
+        margin-left: 140px;
+        padding: 20px;
+        box-sizing: border-box;
+      }
+
+      .processing-panel.active {
+        display: flex;
+      }
+
+      /* Scrollbar para processing panel */
+      .processing-panel::-webkit-scrollbar {
+        width: 14px !important;
+      }
+
+      .processing-panel::-webkit-scrollbar-track {
+        background: #111b21 !important;
+        border-radius: 6px;
+        -webkit-box-shadow: inset 0 0 6px rgba(0,0,0,0.3);
+      }
+
+      .processing-panel::-webkit-scrollbar-thumb {
+        background: #374248 !important;
+        border-radius: 6px;
+        border: 2px solid #111b21;
+        -webkit-box-shadow: inset 0 0 6px rgba(0,0,0,0.5);
+      }
+
+      .processing-panel::-webkit-scrollbar-thumb:hover {
+        background: #4a5c66 !important;
+      }
+
+      /* Scrollbar para tabla de resultados */
+      .processing-results::-webkit-scrollbar {
+        width: 14px !important;
+        height: 14px !important;
+      }
+
+      .processing-results::-webkit-scrollbar-track {
+        background: #2a3942 !important;
+        border-radius: 6px;
+      }
+
+      .processing-results::-webkit-scrollbar-thumb {
+        background: #374248 !important;
+        border-radius: 6px;
+        border: 2px solid #2a3942;
+      }
+
+      .processing-results::-webkit-scrollbar-thumb:hover {
+        background: #4a5c66 !important;
+      }
+
+      .processing-header {
+        margin-bottom: 30px;
+      }
+
+      .processing-header h2 {
+        color: #25d366;
+        font-size: 24px;
+        margin-bottom: 8px;
+      }
+
+      .processing-header p {
+        color: #8696a0;
+        font-size: 14px;
+      }
+
+      .processing-stats {
+        display: flex;
+        gap: 20px;
+        margin-bottom: 30px;
+        flex-wrap: wrap;
+      }
+
+      .stat-card {
+        flex: 1;
+        min-width: 150px;
+        background: #2a3942;
+        padding: 20px;
+        border-radius: 8px;
+        text-align: center;
+        border: 1px solid #3b4043;
+      }
+
+      .stat-value {
+        display: block;
+        font-size: 36px;
+        font-weight: bold;
+        color: #25d366;
+        margin-bottom: 8px;
+      }
+
+      .stat-label {
+        color: #8696a0;
+        font-size: 14px;
+      }
+
+      .processing-actions {
+        display: flex;
+        gap: 15px;
+        margin-bottom: 30px;
+        flex-wrap: wrap;
+      }
+
+      .process-btn {
+        background: #25d366;
+        color: white;
+        padding: 15px 30px;
+        border: none;
+        border-radius: 8px;
+        font-size: 16px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background-color 0.2s;
+      }
+
+      .process-btn:hover {
+        background: #1fa855;
+      }
+
+      .process-btn:disabled {
+        background: #555;
+        cursor: not-allowed;
+      }
+
+      .refresh-btn {
+        background: #374248;
+        color: white;
+        padding: 15px 20px;
+        border: none;
+        border-radius: 8px;
+        font-size: 16px;
+        cursor: pointer;
+        transition: background-color 0.2s;
+      }
+
+      .refresh-btn:hover {
+        background: #4a5c66;
+      }
+
+      /* Switch para modo automático */
+      .switch-container {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: #374248;
+        padding: 10px 15px;
+        border-radius: 8px;
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .switch-container input[type="checkbox"] {
+        display: none;
+      }
+
+      .switch-slider {
+        position: relative;
+        width: 50px;
+        height: 26px;
+        background: #555;
+        border-radius: 13px;
+        transition: background 0.3s;
+      }
+
+      .switch-slider::before {
+        content: '';
+        position: absolute;
+        width: 22px;
+        height: 22px;
+        left: 2px;
+        top: 2px;
+        background: white;
+        border-radius: 50%;
+        transition: transform 0.3s;
+      }
+
+      .switch-container input:checked + .switch-slider {
+        background: #25d366;
+      }
+
+      .switch-container input:checked + .switch-slider::before {
+        transform: translateX(24px);
+      }
+
+      .switch-label {
+        color: #e9edef;
+        font-size: 14px;
+        font-weight: 500;
+      }
+
+      .switch-container input:disabled + .switch-slider {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      .switch-container:has(input:disabled) {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      /* Botón procesar todos */
+      .process-all-btn {
+        background: #ffc107;
+        color: #000;
+        padding: 15px 20px;
+        border: none;
+        border-radius: 8px;
+        font-size: 16px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background-color 0.2s;
+      }
+
+      .process-all-btn:hover {
+        background: #ffb300;
+      }
+
+      .process-all-btn:disabled {
+        background: #555;
+        color: #999;
+        cursor: not-allowed;
+      }
+
+      .processing-results {
+        flex: 1;
+        overflow: auto;
+        min-height: 300px;
+        max-height: calc(100vh - 600px);
+      }
+
+      .processing-results h3 {
+        color: #e9edef;
+        font-size: 18px;
+        margin-bottom: 15px;
+        position: sticky;
+        top: 0;
+        background: #0b141a;
+        padding: 10px 0;
+        z-index: 1;
+      }
+
+      #processingResultsTable {
+        width: 100%;
+        border-collapse: collapse;
+        background: #2a3942;
+        border-radius: 8px;
+        overflow: auto;
+        min-width: 800px;
+      }
+
+      #processingResultsTable th {
+        background: #374248;
+        color: #e9edef;
+        padding: 12px;
+        text-align: left;
+        font-weight: 500;
+        border-bottom: 1px solid #3b4043;
+      }
+
+      #processingResultsTable td {
+        padding: 12px;
+        color: #e9edef;
+        border-bottom: 1px solid #3b4043;
+      }
+
+      #processingResultsTable tbody tr:hover {
+        background: #374248;
+      }
+
+      .status-success {
+        color: #25d366;
+        font-weight: 500;
+      }
+
+      .status-error {
+        color: #f15c6d;
+        font-weight: 500;
+      }
+
+      .status-processing {
+        color: #ffc107;
+        font-weight: 500;
+      }
+
+      /* API Keys Section */
+      .api-keys-section {
+        background: #2a3942;
+        padding: 20px;
+        border-radius: 8px;
+        margin-bottom: 30px;
+        max-width: 100%;
+        overflow-x: auto;
+      }
+
+      .api-keys-section h3 {
+        color: #e9edef;
+        font-size: 18px;
+        margin-bottom: 15px;
+      }
+
+      .api-keys-list {
+        margin-bottom: 15px;
+      }
+
+      .api-key-item {
+        background: #374248;
+        padding: 12px 15px;
+        border-radius: 6px;
+        margin-bottom: 10px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .api-key-item.active {
+        border: 2px solid #25d366;
+      }
+
+      .api-key-info {
+        flex: 1;
+      }
+
+      .api-key-name {
+        color: #e9edef;
+        font-weight: 500;
+        font-size: 14px;
+      }
+
+      .api-key-value {
+        color: #8696a0;
+        font-size: 12px;
+        font-family: monospace;
+      }
+
+      .api-key-status {
+        color: #25d366;
+        font-size: 12px;
+        margin-left: 10px;
+      }
+
+      .api-key-actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      .add-key-form {
+        display: flex;
+        gap: 10px;
+        align-items: stretch;
+        flex-wrap: wrap;
+      }
+
+      .add-key-form input {
+        flex: 1;
+        min-width: 200px;
+        padding: 10px 15px;
+        background: #374248;
+        border: 1px solid #3b4043;
+        border-radius: 6px;
+        color: #e9edef;
+        font-size: 14px;
+      }
+
+      .add-key-form input::placeholder {
+        color: #8696a0;
+      }
+
+      .add-key-btn {
+        background: #25d366;
+        color: white;
+        padding: 10px 20px;
+        border: none;
+        border-radius: 6px;
+        font-size: 14px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+
+      .add-key-btn:hover {
+        background: #1fa855;
+      }
+
+      .btn-small {
+        background: #374248;
+        color: #e9edef;
+        padding: 6px 12px;
+        border: none;
+        border-radius: 4px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      .btn-small:hover {
+        background: #4a5c66;
+      }
+
+      .btn-small.active {
+        background: #25d366;
+      }
+
+      .btn-small.danger {
+        background: #f15c6d;
+      }
+
+      .btn-small.danger:hover {
+        background: #d94452;
+      }
+
+      /* Action buttons */
+      .action-buttons {
+        display: flex;
+        gap: 5px;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+
+      .btn-action {
+        background: #374248;
+        color: #e9edef;
+        padding: 6px 10px;
+        border: none;
+        border-radius: 4px;
+        font-size: 16px;
+        cursor: pointer;
+        transition: all 0.2s;
+        min-width: 32px;
+      }
+
+      .btn-action:hover {
+        background: #4a5c66;
+        transform: scale(1.1);
+      }
+
+      .btn-action.btn-danger {
+        background: #f15c6d;
+      }
+
+      .btn-action.btn-danger:hover {
+        background: #d94452;
+      }
+
       /* Tabs */
       .tabs {
         display: flex;
@@ -968,8 +1419,11 @@
     <div class="app-container">
       <!-- Panel de conexión -->
       <div id="connectionPanel" class="connection-panel">
-        <h1>🐱 Loader Meow</h1>
-        <p>Cliente de WhatsApp Desktop</p>
+        <h1>
+          <span style="font-size: 1.6em; vertical-align: middle;">🚚</span>
+          CaricaLoader Meow
+        </h1>
+        <p>CaricaLoader - carga automática de ofertas</p>
         <div id="qrContainer" class="qr-container" style="display: none">
           <div id="qrCode">Esperando código QR...</div>
         </div>
@@ -987,6 +1441,9 @@
           </button>
           <button class="tab" onclick="showTab('associations')">
             🔗 Asociaciones
+          </button>
+          <button class="tab" onclick="showTab('processing')">
+            🤖 Procesamiento IA
           </button>
         </div>
 
@@ -1080,6 +1537,80 @@
           </table>
         </div>
         </div>
+
+        <!-- Panel de Procesamiento IA -->
+        <div id="processingPanel" class="processing-panel">
+          <div class="processing-header">
+            <h2>🤖 Procesamiento con IA</h2>
+            <p>Procesa mensajes de WhatsApp para generar cargas automáticamente</p>
+          </div>
+
+          <!-- Gestión de API Keys -->
+          <div class="api-keys-section">
+            <h3>🔑 Gestión de API Keys</h3>
+            <div class="api-keys-list" id="apiKeysList">
+              <!-- Se cargarán dinámicamente -->
+            </div>
+            <div class="add-key-form">
+              <input type="text" id="newApiKey" placeholder="Ingresa tu API Key de Gemini" />
+              <input type="text" id="newApiKeyName" placeholder="Nombre (ej: Key Personal)" />
+              <button onclick="addNewGeminiKey()" class="add-key-btn">➕ Agregar Key</button>
+            </div>
+          </div>
+          
+          <div class="processing-stats">
+            <div class="stat-card">
+              <span class="stat-value" id="pendingCount">0</span>
+              <span class="stat-label">Mensajes pendientes</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-value" id="processedCount">0</span>
+              <span class="stat-label">Procesados hoy</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-value" id="errorCount">0</span>
+              <span class="stat-label">Errores</span>
+            </div>
+          </div>
+          
+          <div class="processing-actions">
+            <button class="refresh-btn" onclick="refreshUnprocessedMessages()">
+              🔄 Actualizar Lista
+            </button>
+            
+            <label class="switch-container">
+              <input type="checkbox" id="autoModeSwitch" onchange="toggleAutoMode()">
+              <span class="switch-slider"></span>
+              <span class="switch-label">🤖 Modo Automático</span>
+            </label>
+            
+            <button class="process-all-btn" id="processAllBtn" onclick="processAllMessages()">
+              ⚡ Procesar Todos
+            </button>
+          </div>
+          
+          <div class="processing-results">
+            <h3>📋 Mensajes Sin Procesar</h3>
+            <p style="color: #8696a0; font-size: 14px; margin-bottom: 15px;">
+              Procesa mensajes de a uno. El contenido ya incluye "ALT: +teléfono_real"
+            </p>
+            <table id="processingResultsTable">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Mensaje (con ALT)</th>
+                  <th>Remitente</th>
+                  <th>Teléfono Real</th>
+                  <th>Intentos</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="processingResultsBody">
+                <!-- Los datos se cargarán dinámicamente -->
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1089,6 +1620,9 @@
       let associationsData = [];
       let currentFilter = "all";
       let searchTerm = "";
+      let isProcessing = false; // Control de procesamiento único
+      let autoProcessInterval = null; // Intervalo para modo automático
+      let isAutoModeActive = false; // Estado del modo automático
 
       // ===== FUNCIONES PARA PESTAÑAS =====
       function showTab(tabName) {
@@ -1097,6 +1631,7 @@
         // Ocultar todos los paneles
         document.getElementById("messagesPanel").classList.remove("active");
         document.getElementById("associationsPanel").classList.remove("active");
+        document.getElementById("processingPanel").classList.remove("active");
 
         // Remover clase active de todas las pestañas
         document.querySelectorAll(".tab").forEach((tab) => {
@@ -1117,6 +1652,13 @@
             .classList.add("active");
           console.log("Panel de asociaciones activado");
           loadAssociations();
+        } else if (tabName === "processing") {
+          document.getElementById("processingPanel").classList.add("active");
+          document
+            .querySelector(".tab[onclick=\"showTab('processing')\"]")
+            .classList.add("active");
+          console.log("Panel de procesamiento IA activado");
+          refreshUnprocessedMessages();
         }
       }
 
@@ -1776,6 +2318,860 @@
             savePhoneAssociation();
           }
         });
+
+      // ===== FUNCIONES PARA PROCESAMIENTO IA =====
+
+      // Función para refrescar mensajes sin procesar
+      async function refreshUnprocessedMessages() {
+        try {
+          // Cargar API keys primero
+          await loadGeminiKeys();
+          
+          // Cargar mensajes sin procesar
+          const messages = await window.go.main.App.GetUnprocessedMessagesWithRealPhone(100);
+          
+          // Renderizar en la tabla
+          renderUnprocessedMessages(messages);
+          
+          // Actualizar contador
+          document.getElementById('pendingCount').textContent = messages.length;
+          
+          // Actualizar estadísticas
+          const stats = await window.go.main.App.GetProcessingStats();
+          document.getElementById('processedCount').textContent = stats.success_count || 0;
+          document.getElementById('errorCount').textContent = stats.error_count || 0;
+        } catch (error) {
+          console.error('Error refrescando mensajes:', error);
+          showNotification(`Error al cargar mensajes: ${error}`, "error");
+        }
+      }
+
+      // Renderizar mensajes sin procesar
+      function renderUnprocessedMessages(messages) {
+        const tbody = document.getElementById('processingResultsBody');
+        tbody.innerHTML = '';
+        
+        if (!messages || messages.length === 0) {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="6" style="text-align: center; color: #8696a0; padding: 40px;">
+                ✅ No hay mensajes pendientes de procesamiento
+              </td>
+            </tr>
+          `;
+          return;
+        }
+        
+        messages.forEach(msg => {
+          const row = document.createElement('tr');
+          
+          // Formatear fecha
+          const date = new Date(msg.timestamp);
+          const formattedDate = date.toLocaleString('es-ES', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+          });
+          
+          // Agregar ALT al contenido para mostrarlo
+          const contentWithAlt = `${msg.content}\n\nALT: ${msg.real_phone}`;
+          const truncatedContent = truncate(contentWithAlt, 80);
+          
+          // Formatear intentos
+          const attempts = msg.processing_attempts || 0;
+          const attemptsText = attempts > 0 
+            ? `<span style="color: ${attempts >= 3 ? '#f15c6d' : '#ffc107'};">${attempts}/3</span>`
+            : '0/3';
+          
+          // Crear las celdas manualmente para evitar problemas con comillas
+          const processBtn = document.createElement('button');
+          processBtn.className = 'btn-action';
+          processBtn.style.background = '#25d366';
+          processBtn.title = 'Procesar este mensaje';
+          processBtn.textContent = '▶️';
+          processBtn.onclick = () => processSingleMessage(msg.id, msg.chat_jid);
+          
+          const editBtn = document.createElement('button');
+          editBtn.className = 'btn-action';
+          editBtn.title = 'Editar mensaje';
+          editBtn.textContent = '✏️';
+          editBtn.onclick = () => editMessage(msg.id, msg.chat_jid);
+          
+          const deleteBtn = document.createElement('button');
+          deleteBtn.className = 'btn-action btn-danger';
+          deleteBtn.title = 'Eliminar';
+          deleteBtn.textContent = '🗑️';
+          deleteBtn.onclick = () => deleteMessage(msg.id, msg.chat_jid);
+          
+          const actionDiv = document.createElement('div');
+          actionDiv.className = 'action-buttons';
+          actionDiv.appendChild(processBtn);
+          
+          if (attempts > 0) {
+            const viewErrorBtn = document.createElement('button');
+            viewErrorBtn.className = 'btn-action';
+            viewErrorBtn.style.background = '#ffc107';
+            viewErrorBtn.title = 'Ver detalles del último error';
+            viewErrorBtn.textContent = '👁️';
+            viewErrorBtn.onclick = () => viewLastProcessingError(msg.id, msg.chat_jid);
+            actionDiv.appendChild(viewErrorBtn);
+          }
+          
+          actionDiv.appendChild(editBtn);
+          actionDiv.appendChild(deleteBtn);
+          
+          const actionsCell = document.createElement('td');
+          actionsCell.appendChild(actionDiv);
+          
+          row.innerHTML = `
+            <td>${formattedDate}</td>
+            <td title="${contentWithAlt.replace(/"/g, '&quot;')}" style="max-width: 300px; word-wrap: break-word;">${truncatedContent}</td>
+            <td>${msg.sender_name}</td>
+            <td style="color: #25d366; font-weight: 500;">${msg.real_phone}</td>
+            <td>${attemptsText}</td>
+          `;
+          row.appendChild(actionsCell);
+          tbody.appendChild(row);
+        });
+      }
+
+      // Procesar un solo mensaje
+      async function processSingleMessage(messageID, chatJID) {
+        console.log(`🔵 processSingleMessage llamado con: ${messageID}, ${chatJID}`);
+        
+        // Prevenir múltiples procesamientos simultáneos
+        if (isProcessing) {
+          showNotification('⏳ Ya hay un mensaje procesándose. Por favor espera...', 'warning');
+          return;
+        }
+        
+        isProcessing = true;
+        console.log(`🚀 Iniciando procesamiento de mensaje: ${messageID}`);
+        
+        // Deshabilitar todos los botones de procesar
+        document.querySelectorAll('.btn-action').forEach(b => {
+          b.disabled = true;
+          // Cambiar el botón de procesar a spinner
+          if (b.textContent.includes('▶️')) {
+            b.textContent = '⏳';
+          }
+        });
+        
+        // Deshabilitar también el botón de procesar todos
+        const processAllBtn = document.querySelector('.process-all-btn');
+        if (processAllBtn) processAllBtn.disabled = true;
+        
+        try {
+          const startTime = Date.now();
+          
+          console.log(`📞 Llamando a window.go.main.App.ProcessSingleMessage...`);
+          
+          if (!window.go || !window.go.main || !window.go.main.App || !window.go.main.App.ProcessSingleMessage) {
+            throw new Error('La función ProcessSingleMessage no está disponible. Verifica que la app esté inicializada.');
+          }
+          
+          const result = await window.go.main.App.ProcessSingleMessage(messageID, chatJID);
+          
+          const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+          console.log(`⏱️ Procesamiento completado en ${elapsed}s`);
+          console.log(`📊 Resultado:`, result);
+          
+          if (result.status === 'success') {
+            showNotification(`✅ Mensaje procesado en ${elapsed}s. ${result.supabase_ids ? result.supabase_ids.length : 0} cargas creadas`, "success");
+          } else {
+            showNotification(`❌ Error procesando: ${result.error_message}`, "error");
+          }
+          
+        } catch (error) {
+          console.error("❌ Error completo:", error);
+          console.error("❌ Stack trace:", error.stack);
+          showNotification(`❌ Error: ${error.message || error}`, "error");
+        } finally {
+          // Rehabilitar todos los botones y restaurar iconos
+          document.querySelectorAll('.btn-action').forEach(b => {
+            b.disabled = false;
+          });
+          
+          // Rehabilitar botón de procesar todos (solo si no está en modo automático)
+          const processAllBtn = document.querySelector('.process-all-btn');
+          if (processAllBtn && !isAutoModeActive) {
+            processAllBtn.disabled = false;
+          }
+          
+          isProcessing = false;
+          
+          // Refrescar la lista para actualizar los iconos correctamente (siempre, incluso con errores)
+          await refreshUnprocessedMessages();
+        }
+      }
+
+      // Toggle modo automático
+      function toggleAutoMode() {
+        const checkbox = document.getElementById('autoModeSwitch');
+        isAutoModeActive = checkbox.checked;
+        
+        if (isAutoModeActive) {
+          console.log('🤖 Modo automático ACTIVADO');
+          showNotification('🤖 Modo automático activado. Procesará cada 5 minutos', 'success');
+          
+          // Deshabilitar botón de procesar todos
+          const processAllBtn = document.querySelector('.process-all-btn');
+          if (processAllBtn) {
+            processAllBtn.disabled = true;
+            processAllBtn.title = 'Desactiva el modo automático para usar esta opción';
+          }
+          
+          // Deshabilitar todos los botones de procesar individual
+          document.querySelectorAll('.btn-action').forEach(btn => {
+            if (btn.textContent.includes('▶️')) {
+              btn.disabled = true;
+              btn.title = 'Desactiva el modo automático para procesar manualmente';
+            }
+          });
+          
+          // Iniciar intervalo de 5 minutos
+          autoProcessInterval = setInterval(async () => {
+            console.log('⏰ Ciclo automático iniciado...');
+            await processNextMessage();
+          }, 5 * 60 * 1000); // 5 minutos
+          
+          // Procesar el primero inmediatamente
+          processNextMessage();
+        } else {
+          console.log('🤖 Modo automático DESACTIVADO');
+          showNotification('Modo automático desactivado', 'info');
+          
+          // Detener intervalo
+          if (autoProcessInterval) {
+            clearInterval(autoProcessInterval);
+            autoProcessInterval = null;
+          }
+          
+          // Rehabilitar botón de procesar todos
+          const processAllBtn = document.querySelector('.process-all-btn');
+          if (processAllBtn) {
+            processAllBtn.disabled = false;
+            processAllBtn.title = 'Procesar todos los mensajes en cola';
+          }
+          
+          // Rehabilitar todos los botones de procesar individual
+          document.querySelectorAll('.btn-action').forEach(btn => {
+            if (btn.textContent.includes('▶️')) {
+              btn.disabled = false;
+              btn.title = 'Procesar este mensaje';
+            }
+          });
+        }
+      }
+
+      // Procesar el siguiente mensaje disponible (para modo automático)
+      async function processNextMessage() {
+        if (isProcessing) {
+          console.log('⏭️ Ya hay un mensaje procesándose, saltando ciclo automático');
+          return;
+        }
+        
+        try {
+          // Obtener mensajes sin procesar
+          const messages = await window.go.main.App.GetUnprocessedMessagesWithRealPhone(1);
+          
+          if (messages.length === 0) {
+            console.log('✅ No hay mensajes pendientes para procesar');
+            return;
+          }
+          
+          const msg = messages[0];
+          console.log(`🤖 [Automático] Procesando mensaje: ${msg.id}`);
+          await processSingleMessage(msg.id, msg.chat_jid);
+        } catch (error) {
+          console.error('Error en procesamiento automático:', error);
+        }
+      }
+
+      // Procesar todos los mensajes en cola
+      async function processAllMessages() {
+        if (isProcessing) {
+          showNotification('⏳ Ya hay un mensaje procesándose. Espera a que termine.', 'warning');
+          return;
+        }
+        
+        try {
+          const messages = await window.go.main.App.GetUnprocessedMessagesWithRealPhone(100);
+          
+          if (messages.length === 0) {
+            showNotification('✅ No hay mensajes pendientes', 'info');
+            return;
+          }
+          
+          const total = messages.length;
+          const confirmed = confirm(`¿Procesar ${total} mensaje${total !== 1 ? 's' : ''}?\n\nEsto puede tardar varios minutos.`);
+          
+          if (!confirmed) return;
+          
+          console.log(`⚡ Iniciando procesamiento de ${total} mensajes...`);
+          let processed = 0;
+          let successful = 0;
+          let errors = 0;
+          
+          // Deshabilitar el botón y el switch de modo automático
+          const btn = document.getElementById('processAllBtn');
+          if (btn) {
+            btn.disabled = true;
+            btn.textContent = `⏳ Procesando 0/${total}`;
+          }
+          
+          const autoSwitch = document.getElementById('autoModeSwitch');
+          if (autoSwitch) autoSwitch.disabled = true;
+          
+          for (let i = 0; i < messages.length; i++) {
+            const msg = messages[i];
+            
+            try {
+              console.log(`\n📋 [${i + 1}/${total}] Procesando: ${msg.id}`);
+              if (btn) btn.textContent = `⏳ Procesando ${i + 1}/${total}`;
+              
+              const result = await window.go.main.App.ProcessSingleMessage(msg.id, msg.chat_jid);
+              
+              processed++;
+              if (result.status === 'success') {
+                successful++;
+                console.log(`✅ [${i + 1}/${total}] Exitoso`);
+              } else {
+                errors++;
+                console.log(`❌ [${i + 1}/${total}] Error: ${result.error_message}`);
+              }
+              
+              // Pequeña pausa entre mensajes (4 segundos para no exceder rate limit)
+              if (i < messages.length - 1) {
+                await new Promise(resolve => setTimeout(resolve, 4000));
+              }
+            } catch (error) {
+              errors++;
+              console.error(`❌ [${i + 1}/${total}] Error:`, error);
+            }
+          }
+          
+          // Mostrar resumen
+          console.log(`\n🎉 Procesamiento completado:`);
+          console.log(`   Total: ${processed}/${total}`);
+          console.log(`   ✅ Exitosos: ${successful}`);
+          console.log(`   ❌ Errores: ${errors}`);
+          
+          showNotification(
+            `🎉 Procesamiento completado\n✅ ${successful} exitosos\n❌ ${errors} errores`, 
+            successful > errors ? 'success' : 'warning'
+          );
+          
+          // Refrescar lista
+          await refreshUnprocessedMessages();
+          
+        } catch (error) {
+          console.error('Error en procesamiento masivo:', error);
+          showNotification(`Error: ${error}`, 'error');
+        } finally {
+          // Rehabilitar botón y switch
+          const btn = document.querySelector('.process-all-btn');
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent = '⚡ Procesar Todos';
+          }
+          
+          const autoSwitch = document.getElementById('autoModeSwitch');
+          if (autoSwitch) autoSwitch.disabled = false;
+        }
+      }
+
+
+      // ===== FUNCIONES PARA GESTIÓN DE API KEYS =====
+
+      // Cargar API keys de Gemini
+      async function loadGeminiKeys() {
+        try {
+          const keys = await window.go.main.App.GetGeminiKeys();
+          renderGeminiKeys(keys);
+        } catch (error) {
+          console.error('Error cargando API keys:', error);
+        }
+      }
+
+      // Renderizar lista de API keys
+      function renderGeminiKeys(keys) {
+        const container = document.getElementById('apiKeysList');
+        
+        if (!keys || keys.length === 0) {
+          container.innerHTML = `
+            <div style="text-align: center; color: #8696a0; padding: 20px;">
+              ⚠️ No hay API keys configuradas. Agrega una para usar el procesamiento con IA.
+            </div>
+          `;
+          return;
+        }
+        
+        container.innerHTML = '';
+        keys.forEach((key, index) => {
+          const keyItem = document.createElement('div');
+          keyItem.className = `api-key-item ${key.is_active ? 'active' : ''}`;
+          
+          const maskedKey = key.key.substring(0, 10) + '...' + key.key.substring(key.key.length - 4);
+          
+          keyItem.innerHTML = `
+            <div class="api-key-info">
+              <div class="api-key-name">
+                ${key.name || 'API Key ' + (index + 1)}
+                ${key.is_active ? '<span class="api-key-status">✓ Activa</span>' : ''}
+              </div>
+              <div class="api-key-value">${maskedKey}</div>
+              ${key.error_count > 0 ? `<div style="color: #f15c6d; font-size: 12px;">⚠️ ${key.error_count} errores</div>` : ''}
+            </div>
+            <div class="api-key-actions">
+              ${!key.is_active ? `<button class="btn-small" onclick="setActiveKey(${index})">Activar</button>` : ''}
+              <button class="btn-small danger" onclick="removeKey(${index})">Eliminar</button>
+            </div>
+          `;
+          
+          container.appendChild(keyItem);
+        });
+      }
+
+      // Agregar nueva API key
+      async function addNewGeminiKey() {
+        const keyInput = document.getElementById('newApiKey');
+        const nameInput = document.getElementById('newApiKeyName');
+        
+        const key = keyInput.value.trim();
+        const name = nameInput.value.trim() || 'API Key ' + Date.now();
+        
+        if (!key) {
+          showNotification('Por favor ingresa una API key válida', 'warning');
+          return;
+        }
+        
+        try {
+          await window.go.main.App.AddGeminiKey(key, name);
+          showNotification('✅ API Key agregada exitosamente', 'success');
+          
+          // Limpiar inputs
+          keyInput.value = '';
+          nameInput.value = '';
+          
+          // Recargar lista
+          await loadGeminiKeys();
+          
+          // Refrescar stats para ver si ahora puede procesar
+          await refreshProcessingStats();
+        } catch (error) {
+          showNotification(`Error agregando API key: ${error}`, 'error');
+        }
+      }
+
+      // Activar una API key específica
+      async function setActiveKey(index) {
+        try {
+          await window.go.main.App.SetActiveGeminiKey(index);
+          showNotification('✅ API Key activada', 'success');
+          await loadGeminiKeys();
+        } catch (error) {
+          showNotification(`Error activando API key: ${error}`, 'error');
+        }
+      }
+
+      // Eliminar una API key
+      async function removeKey(index) {
+        if (!confirm('¿Estás seguro de que deseas eliminar esta API key?')) {
+          return;
+        }
+        
+        try {
+          await window.go.main.App.RemoveGeminiKey(index);
+          showNotification('API Key eliminada', 'success');
+          await loadGeminiKeys();
+        } catch (error) {
+          showNotification(`Error eliminando API key: ${error}`, 'error');
+        }
+      }
+
+
+      // Ver detalles del último error de procesamiento de un mensaje sin procesar
+      async function viewLastProcessingError(messageID, chatJID) {
+        try {
+          // Obtener todos los resultados y buscar el último de este mensaje
+          const results = await window.go.main.App.GetProcessingResults(1000);
+          const messageResults = results.filter(r => r.message_id === messageID && r.chat_jid === chatJID);
+          
+          if (messageResults.length === 0) {
+            showNotification('No se encontraron intentos previos de este mensaje', 'warning');
+            return;
+          }
+          
+          // Tomar el más reciente
+          const result = messageResults[0];
+          
+          // Mostrar modal con detalles
+          const detailsHTML = `
+            <div style="background: #2a3942; padding: 20px; border-radius: 8px; max-width: 700px; max-height: 80vh; overflow-y: auto;">
+              <h3 style="color: #ffc107; margin-bottom: 15px;">⚠️ Detalles del Último Intento</h3>
+              
+              <div style="margin-bottom: 15px;">
+                <strong style="color: #e9edef;">Estado:</strong> 
+                <span style="color: #f15c6d;">${result.status}</span>
+              </div>
+              
+              <div style="margin-bottom: 15px;">
+                <strong style="color: #e9edef;">Fecha del intento:</strong> 
+                <span style="color: #8696a0;">${new Date(result.processed_at).toLocaleString('es-ES')}</span>
+              </div>
+              
+              <div style="margin-bottom: 15px;">
+                <strong style="color: #e9edef;">Mensaje enviado a IA:</strong>
+                <pre style="background: #1a2630; padding: 10px; border-radius: 4px; color: #e9edef; white-space: pre-wrap; word-wrap: break-word; max-height: 200px; overflow-y: auto;">${result.content}</pre>
+              </div>
+              
+              ${result.ai_response ? `
+                <div style="margin-bottom: 15px;">
+                  <strong style="color: #25d366;">✅ Respuesta de IA (JSON):</strong>
+                  <pre style="background: #1a2630; padding: 10px; border-radius: 4px; color: #25d366; white-space: pre-wrap; max-height: 300px; overflow-y: auto; font-size: 12px;">${result.ai_response}</pre>
+                  <button onclick="copyToClipboard(\`${result.ai_response.replace(/`/g, '\\`')}\`)" 
+                          style="background: #374248; color: white; padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; margin-top: 8px;">
+                    📋 Copiar JSON
+                  </button>
+                </div>
+              ` : ''}
+              
+              ${result.error_message ? `
+                <div style="margin-bottom: 15px;">
+                  <strong style="color: #f15c6d;">❌ Error:</strong>
+                  <pre style="background: #1a2630; padding: 10px; border-radius: 4px; color: #f15c6d; white-space: pre-wrap; max-height: 200px; overflow-y: auto;">${result.error_message}</pre>
+                </div>
+              ` : ''}
+              
+              <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+                <button onclick="document.getElementById('errorDetailsModal').remove()" 
+                        style="background: #374248; color: white; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer;">
+                  Cerrar
+                </button>
+                <button onclick="document.getElementById('errorDetailsModal').remove(); editMessage('${messageID}', '${chatJID}')" 
+                        style="background: #25d366; color: white; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer;">
+                  ✏️ Editar Mensaje
+                </button>
+              </div>
+            </div>
+          `;
+          
+          // Crear modal
+          const modal = document.createElement('div');
+          modal.id = 'errorDetailsModal';
+          modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            padding: 20px;
+          `;
+          modal.innerHTML = detailsHTML;
+          
+          modal.addEventListener('click', (e) => {
+            if (e.target === modal) modal.remove();
+          });
+          document.addEventListener('keydown', function escHandler(e) {
+            if (e.key === 'Escape') {
+              modal.remove();
+              document.removeEventListener('keydown', escHandler);
+            }
+          });
+          
+          document.body.appendChild(modal);
+        } catch (error) {
+          console.error('Error mostrando detalles del error:', error);
+          showNotification('Error al mostrar detalles: ' + error, 'error');
+        }
+      }
+
+      // Copiar al portapapeles
+      function copyToClipboard(text) {
+        navigator.clipboard.writeText(text).then(() => {
+          showNotification('✅ JSON copiado al portapapeles', 'success');
+        }).catch(err => {
+          showNotification('Error al copiar: ' + err, 'error');
+        });
+      }
+
+      // Ver detalles de procesamiento
+      async function viewProcessingDetails(resultId) {
+        try {
+          const results = await window.go.main.App.GetProcessingResults(1000);
+          const result = results.find(r => r.id == resultId);
+          
+          if (!result) {
+            showNotification('No se encontró el resultado', 'error');
+            return;
+          }
+          
+          // Mostrar modal con detalles
+          const detailsHTML = `
+            <div style="background: #2a3942; padding: 20px; border-radius: 8px; max-width: 600px; max-height: 80vh; overflow-y: auto;">
+              <h3 style="color: #25d366; margin-bottom: 15px;">📋 Detalles del Procesamiento</h3>
+              
+              <div style="margin-bottom: 15px;">
+                <strong style="color: #e9edef;">Estado:</strong> 
+                <span style="color: ${result.status === 'success' ? '#25d366' : '#f15c6d'};">${result.status}</span>
+              </div>
+              
+              <div style="margin-bottom: 15px;">
+                <strong style="color: #e9edef;">Remitente:</strong> 
+                <span style="color: #8696a0;">${result.sender_phone} (${result.real_phone})</span>
+              </div>
+              
+              ${result.processing_attempts > 0 ? `
+                <div style="margin-bottom: 15px;">
+                  <strong style="color: #e9edef;">Intentos de procesamiento:</strong> 
+                  <span style="color: ${result.processing_attempts >= 3 ? '#f15c6d' : '#ffc107'};">${result.processing_attempts}/3</span>
+                </div>
+              ` : ''}
+              
+              <div style="margin-bottom: 15px;">
+                <strong style="color: #e9edef;">Contenido:</strong>
+                <pre style="background: #1a2630; padding: 10px; border-radius: 4px; color: #e9edef; white-space: pre-wrap; word-wrap: break-word;">${result.content}</pre>
+              </div>
+              
+              ${result.error_message ? `
+                <div style="margin-bottom: 15px;">
+                  <strong style="color: #f15c6d;">Error:</strong>
+                  <pre style="background: #1a2630; padding: 10px; border-radius: 4px; color: #f15c6d; white-space: pre-wrap;">${result.error_message}</pre>
+                </div>
+              ` : ''}
+              
+              ${result.ai_response ? `
+                <div style="margin-bottom: 15px;">
+                  <strong style="color: #e9edef;">Respuesta de IA:</strong>
+                  <pre style="background: #1a2630; padding: 10px; border-radius: 4px; color: #e9edef; white-space: pre-wrap; max-height: 300px; overflow-y: auto;">${result.ai_response}</pre>
+                </div>
+              ` : ''}
+              
+              ${result.supabase_ids && result.supabase_ids.length > 0 ? `
+                <div style="margin-bottom: 15px;">
+                  <strong style="color: #e9edef;">Cargas creadas en Supabase:</strong>
+                  <ul style="color: #8696a0; margin-top: 5px;">
+                    ${result.supabase_ids.map(id => `<li>${id}</li>`).join('')}
+                  </ul>
+                </div>
+              ` : ''}
+              
+              <button onclick="document.getElementById('detailsModal').remove()" 
+                      style="background: #25d366; color: white; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; margin-top: 10px;">
+                Cerrar
+              </button>
+            </div>
+          `;
+          
+          // Crear modal
+          const modal = document.createElement('div');
+          modal.id = 'detailsModal';
+          modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            padding: 20px;
+          `;
+          modal.innerHTML = detailsHTML;
+          
+          // Cerrar con ESC o click fuera
+          modal.addEventListener('click', (e) => {
+            if (e.target === modal) modal.remove();
+          });
+          document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') modal.remove();
+          });
+          
+          document.body.appendChild(modal);
+        } catch (error) {
+          console.error('Error mostrando detalles:', error);
+          showNotification('Error al mostrar detalles: ' + error, 'error');
+        }
+      }
+
+      // Editar mensaje
+      async function editMessage(messageID, chatJID) {
+        try {
+          // Obtener detalles del mensaje
+          const message = await window.go.main.App.GetMessageDetails(messageID, chatJID);
+          
+          if (!message) {
+            showNotification('No se encontró el mensaje', 'error');
+            return;
+          }
+          
+          // Mostrar modal de edición
+          const editHTML = `
+            <div style="background: #2a3942; padding: 20px; border-radius: 8px; max-width: 600px; width: 100%;">
+              <h3 style="color: #25d366; margin-bottom: 15px;">✏️ Editar Mensaje</h3>
+              
+              <div style="margin-bottom: 15px;">
+                <label style="color: #e9edef; display: block; margin-bottom: 5px;">Contenido del mensaje:</label>
+                <textarea id="editMessageContent" 
+                          style="width: 100%; min-height: 200px; background: #1a2630; color: #e9edef; border: 1px solid #3b4043; border-radius: 6px; padding: 10px; font-size: 14px; font-family: monospace; resize: vertical;"
+                >${message.content}</textarea>
+              </div>
+              
+              <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                <button onclick="document.getElementById('editModal').remove()" 
+                        style="background: #374248; color: white; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer;">
+                  Cancelar
+                </button>
+                <button onclick="saveEditedMessage('${messageID}', '${chatJID}')" 
+                        style="background: #25d366; color: white; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer;">
+                  💾 Guardar y Reprocesar
+                </button>
+              </div>
+            </div>
+          `;
+          
+          const modal = document.createElement('div');
+          modal.id = 'editModal';
+          modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            padding: 20px;
+          `;
+          modal.innerHTML = editHTML;
+          
+          modal.addEventListener('click', (e) => {
+            if (e.target === modal) modal.remove();
+          });
+          
+          document.body.appendChild(modal);
+        } catch (error) {
+          console.error('Error editando mensaje:', error);
+          showNotification('Error al editar mensaje: ' + error, 'error');
+        }
+      }
+
+      // Guardar mensaje editado
+      async function saveEditedMessage(messageID, chatJID) {
+        const newContent = document.getElementById('editMessageContent').value.trim();
+        
+        if (!newContent) {
+          showNotification('El contenido no puede estar vacío', 'warning');
+          return;
+        }
+        
+        try {
+          await window.go.main.App.UpdateMessageContent(messageID, chatJID, newContent);
+          showNotification('✅ Mensaje actualizado y listo para procesar', 'success');
+          document.getElementById('editModal').remove();
+          await refreshUnprocessedMessages();
+        } catch (error) {
+          showNotification('Error al actualizar mensaje: ' + error, 'error');
+        }
+      }
+
+      // Reprocesar mensaje
+      async function reprocessMessage(messageID, chatJID) {
+        if (!confirm('¿Deseas reprocesar este mensaje? Se reseteará el contador de intentos.')) {
+          return;
+        }
+        
+        try {
+          await window.go.main.App.ReprocessMessage(messageID, chatJID);
+          showNotification('✅ Mensaje marcado para reprocesar', 'success');
+          await refreshProcessingStats();
+        } catch (error) {
+          showNotification('Error al reprocesar mensaje: ' + error, 'error');
+        }
+      }
+
+      // Eliminar mensaje
+      async function deleteMessage(messageID, chatJID) {
+        if (!confirm('¿Estás seguro de que deseas eliminar este mensaje? Esta acción no se puede deshacer.')) {
+          return;
+        }
+        
+        try {
+          await window.go.main.App.DeleteMessage(messageID, chatJID);
+          showNotification('✅ Mensaje eliminado', 'success');
+          await refreshUnprocessedMessages();
+        } catch (error) {
+          showNotification('Error al eliminar mensaje: ' + error, 'error');
+        }
+      }
+
+      // Función auxiliar para truncar texto
+      function truncate(text, maxLength) {
+        if (!text) return '';
+        if (text.length <= maxLength) return text;
+        return text.substring(0, maxLength) + '...';
+      }
+
+      // Función auxiliar para mostrar notificaciones
+      function showNotification(message, type = 'info') {
+        // Crear elemento de notificación
+        const notification = document.createElement('div');
+        notification.className = `notification notification-${type}`;
+        notification.textContent = message;
+        
+        // Estilos de notificación
+        notification.style.cssText = `
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          padding: 15px 20px;
+          border-radius: 8px;
+          color: white;
+          font-weight: 500;
+          z-index: 10000;
+          max-width: 400px;
+          word-wrap: break-word;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        `;
+        
+        // Colores según tipo
+        switch (type) {
+          case 'success':
+            notification.style.background = '#25d366';
+            break;
+          case 'error':
+            notification.style.background = '#f15c6d';
+            break;
+          case 'warning':
+            notification.style.background = '#ffc107';
+            notification.style.color = '#000';
+            break;
+          default:
+            notification.style.background = '#374248';
+        }
+        
+        // Agregar al DOM
+        document.body.appendChild(notification);
+        
+        // Remover después de 5 segundos
+        setTimeout(() => {
+          if (notification.parentNode) {
+            notification.parentNode.removeChild(notification);
+          }
+        }, 5000);
+      }
     </script>
 
     <!-- Modal para asociación de teléfono -->

@@ -24,6 +24,8 @@ build/
 .env
 mysql-config.env
 run-dev.bat
+ai-config.env
+api-keys-config.json
 
 # OS specific files
 .DS_Store

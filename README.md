@@ -16,6 +16,36 @@ Una aplicación de escritorio moderna para WhatsApp construida con **Go** y **Wa
 - 📨 **Enviar Mensajes**: Responde desde la aplicación de escritorio
 - 👥 **Soporte para Grupos**: Muestra números de teléfono y nombres de participantes
 - 🎨 **Interfaz Moderna**: UI oscura inspirada en WhatsApp Web
+- 🤖 **Procesamiento con IA**: Integración con Gemini para generar cargas de transporte automáticamente
+- 📊 **Estadísticas en Tiempo Real**: Monitoreo del procesamiento de mensajes
+- 🔄 **Procesamiento Automático**: Procesa mensajes cada 5 minutos en background
+- 🌐 **Integración con Supabase**: Sube cargas generadas automáticamente a la nube
+
+## 🤖 Procesamiento con IA
+
+La aplicación incluye un sistema avanzado de procesamiento automático de mensajes usando **Gemini AI** para generar cargas de transporte:
+
+### Características del Sistema IA:
+
+- **Filtrado Inteligente**: Solo procesa mensajes con texto, no procesados y con teléfono asociado
+- **Agregación de Datos**: Añade "ALT: +número_real" a cada mensaje antes del procesamiento
+- **Gemini Flash 2.5**: Usa el modelo más avanzado de Google para entender mensajes en español
+- **Validación JSON**: Verifica que las respuestas de IA sean JSON válido
+- **Geocoding Automático**: Convierte direcciones en coordenadas usando Google Maps
+- **Supabase Integration**: Sube automáticamente las cargas generadas a la base de datos en la nube
+
+### Configuración IA:
+
+1. Obtén tu API Key de Gemini: https://makersuite.google.com/app/apikey
+2. Crea el archivo `ai-config.env` basado en `ai-config.env.example`
+3. Configura las variables de entorno necesarias
+4. El sistema procesará automáticamente los mensajes cada 5 minutos
+
+### Funcionamiento:
+
+- **Manual**: Botón "Procesar Mensajes" en la pestaña "Procesamiento IA"
+- **Automático**: Cada 5 minutos procesa hasta 10 mensajes pendientes
+- **Estadísticas**: Monitorea mensajes procesados, errores y cargas creadas
 
 ## 🚀 Requisitos Previos
 
