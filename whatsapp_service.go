@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
+	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/mattn/go-sqlite3"
 	"go.mau.fi/whatsmeow"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
@@ -57,79 +59,104 @@ type MessageStore struct {
 
 // NewMessageStore crea una nueva instancia del store de mensajes
 func NewMessageStore() (*MessageStore, error) {
-	if err := os.MkdirAll("store", 0755); err != nil {
-		return nil, fmt.Errorf("failed to create store directory: %v", err)
-	}
-
-	db, err := sql.Open("sqlite3", "file:store/messages.db?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=5000")
+	// Obtener configuración de la base de datos
+	config := GetDatabaseConfig()
+	
+	// Conectar a MySQL
+	db, err := sql.Open("mysql", config.GetConnectionString())
 	if err != nil {
-		return nil, fmt.Errorf("failed to open message database: %v", err)
+		return nil, fmt.Errorf("failed to connect to MySQL database: %v", err)
 	}
 	
-	// Configurar pool de conexiones para evitar bloqueos
-	db.SetMaxOpenConns(1)  // SQLite funciona mejor con una sola conexión de escritura
-	db.SetMaxIdleConns(1)
-	db.SetConnMaxLifetime(0)
+	// Verificar conexión
+	if err := db.Ping(); err != nil {
+		return nil, fmt.Errorf("failed to ping MySQL database: %v", err)
+	}
+	
+	// Configurar pool de conexiones para MySQL
+	db.SetMaxOpenConns(25)  // MySQL puede manejar múltiples conexiones
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(time.Hour)
 
-	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS chats (
-			jid TEXT PRIMARY KEY,
-			name TEXT,
-			last_message_time TIMESTAMP
-		);
+	// Crear tablas (compatible con MariaDB y MySQL)
+	tables := []string{
+		`CREATE TABLE IF NOT EXISTS chats (
+			jid VARCHAR(255) PRIMARY KEY,
+			name VARCHAR(500),
+			last_message_time TIMESTAMP NULL
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
 
-		CREATE TABLE IF NOT EXISTS messages (
-			id TEXT,
-			chat_jid TEXT,
-			sender_phone TEXT,
-			sender_name TEXT,
+		`CREATE TABLE IF NOT EXISTS messages (
+			id VARCHAR(255),
+			chat_jid VARCHAR(255),
+			sender_phone VARCHAR(100),
+			sender_name VARCHAR(500),
 			content TEXT,
 			timestamp TIMESTAMP,
-			is_from_me BOOLEAN,
-			media_type TEXT,
-			filename TEXT,
-			url TEXT,
-			media_key BLOB,
-			file_sha256 BLOB,
-			file_enc_sha256 BLOB,
-			file_length INTEGER,
-			processed BOOLEAN DEFAULT 0,
+			is_from_me BOOLEAN DEFAULT FALSE,
+			media_type VARCHAR(100),
+			filename VARCHAR(500),
+			url VARCHAR(1000),
+			media_key LONGBLOB,
+			file_sha256 LONGBLOB,
+			file_enc_sha256 LONGBLOB,
+			file_length BIGINT,
+			processed BOOLEAN DEFAULT FALSE,
 			PRIMARY KEY (id, chat_jid),
-			FOREIGN KEY (chat_jid) REFERENCES chats(jid)
-		);
+			FOREIGN KEY (chat_jid) REFERENCES chats(jid) ON DELETE CASCADE
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
 
-		-- Índice para búsqueda rápida de duplicados (por teléfono)
-		CREATE INDEX IF NOT EXISTS idx_messages_duplicate_phone
-		ON messages(chat_jid, sender_phone, content, timestamp);
+		`CREATE TABLE IF NOT EXISTS phone_associations (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			sender_phone VARCHAR(100) NOT NULL UNIQUE,
+			real_phone VARCHAR(50),
+			display_name VARCHAR(500),
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			INDEX idx_sender_phone (sender_phone),
+			INDEX idx_real_phone (real_phone)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+	}
 
-		-- Tabla para asociar sender_phone con números reales
-		CREATE TABLE IF NOT EXISTS phone_associations (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			sender_phone TEXT NOT NULL UNIQUE,
-			real_phone TEXT,
-			display_name TEXT,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		);
+	// Crear cada tabla individualmente
+	for _, query := range tables {
+		if _, err = db.Exec(query); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("failed to create table: %v", err)
+		}
+	}
 
-		-- Índices para phone_associations
-		CREATE INDEX IF NOT EXISTS idx_phone_associations_sender ON phone_associations(sender_phone);
-		CREATE INDEX IF NOT EXISTS idx_phone_associations_real ON phone_associations(real_phone);
+	// Crear índices (compatibles con MariaDB - solo si no existen)
+	indices := []string{
+		`CREATE INDEX IF NOT EXISTS idx_messages_duplicate_phone ON messages(sender_phone, content(100), timestamp)`,
+		`CREATE INDEX IF NOT EXISTS idx_messages_sender_name ON messages(sender_name, timestamp)`,
+		`CREATE INDEX IF NOT EXISTS idx_messages_processed ON messages(processed, timestamp)`,
+		`CREATE INDEX IF NOT EXISTS idx_messages_chat_timestamp ON messages(chat_jid, timestamp)`,
+	}
 
-		-- Índice para búsqueda por nombre
-		CREATE INDEX IF NOT EXISTS idx_messages_sender_name
-		ON messages(sender_name, timestamp);
-
-		-- Índice para mensajes no procesados
-		CREATE INDEX IF NOT EXISTS idx_messages_processed 
-		ON messages(processed, timestamp);
-	`)
-	if err != nil {
-		db.Close()
-		return nil, fmt.Errorf("failed to create tables: %v", err)
+	// Crear cada índice, ignorar errores si ya existe
+	for _, query := range indices {
+		_, err = db.Exec(query)
+		// Ignorar error si el índice ya existe
+		if err != nil && !isIndexExistsError(err) {
+			db.Close()
+			return nil, fmt.Errorf("failed to create index: %v", err)
+		}
 	}
 
 	return &MessageStore{db: db}, nil
+}
+
+// isIndexExistsError verifica si el error es porque el índice ya existe
+func isIndexExistsError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errMsg := err.Error()
+	// MariaDB/MySQL error codes para índice duplicado
+	return strings.Contains(errMsg, "Duplicate key name") || 
+	       strings.Contains(errMsg, "already exists") ||
+	       strings.Contains(errMsg, "Error 1061")
 }
 
 // Close cierra la base de datos
@@ -140,7 +167,8 @@ func (store *MessageStore) Close() error {
 // StoreChat guarda un chat en la base de datos
 func (store *MessageStore) StoreChat(jid, name string, lastMessageTime time.Time) error {
 	_, err := store.db.Exec(
-		`INSERT OR REPLACE INTO chats (jid, name, last_message_time) VALUES (?, ?, ?)`,
+		`INSERT INTO chats (jid, name, last_message_time) VALUES (?, ?, ?) 
+		 ON DUPLICATE KEY UPDATE name = VALUES(name), last_message_time = VALUES(last_message_time)`,
 		jid, name, lastMessageTime,
 	)
 	return err
@@ -161,8 +189,8 @@ func (store *MessageStore) StoreMessage(id, chatJID, senderPhone, senderName, co
 		SELECT COUNT(*) FROM messages 
 		WHERE sender_phone = ? 
 		AND content = ?
-		AND timestamp >= datetime(?, '-24 hours')
-		AND timestamp <= datetime(?, '+24 hours')
+		AND timestamp >= DATE_SUB(?, INTERVAL 24 HOUR)
+		AND timestamp <= DATE_ADD(?, INTERVAL 24 HOUR)
 	`, senderPhone, content, timestamp, timestamp).Scan(&exists)
 	
 	if err != nil {
@@ -927,9 +955,13 @@ func (s *WhatsAppService) GetSendersForAssociation() ([]SenderInfo, error) {
 // SavePhoneAssociation guarda o actualiza una asociación de teléfono
 func (s *WhatsAppService) SavePhoneAssociation(senderPhone, realPhone, displayName string) error {
 	_, err := s.messageStore.db.Exec(`
-		INSERT OR REPLACE INTO phone_associations 
+		INSERT INTO phone_associations 
 		(sender_phone, real_phone, display_name, updated_at) 
-		VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+		VALUES (?, ?, ?, NOW())
+		ON DUPLICATE KEY UPDATE 
+		real_phone = VALUES(real_phone), 
+		display_name = VALUES(display_name), 
+		updated_at = NOW()
 	`, senderPhone, realPhone, displayName)
 	
 	if err != nil {

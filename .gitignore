@@ -22,6 +22,8 @@ build/
 
 # Environment variables
 .env
+mysql-config.env
+run-dev.bat
 
 # OS specific files
 .DS_Store

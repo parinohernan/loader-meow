@@ -1,0 +1,30 @@
+@echo off
+REM Script para ejecutar la aplicación con variables de entorno de MySQL
+REM Copia este archivo a run-dev.bat y actualiza con tus credenciales
+
+echo ========================================
+echo   LOADER MEOW - DESARROLLO
+echo ========================================
+echo.
+
+REM Configurar variables de entorno directamente
+set DB_HOST=localhost
+set DB_PORT=3306
+set DB_USER=root
+set DB_PASSWORD=tu_password_aqui
+set DB_NAME=caricaloader
+set DB_CHARSET=utf8mb4
+
+echo Configuracion MySQL:
+echo - Host: %DB_HOST%
+echo - Puerto: %DB_PORT%
+echo - Usuario: %DB_USER%
+echo - Base de datos: %DB_NAME%
+echo.
+echo ========================================
+echo   INICIANDO APLICACION...
+echo ========================================
+echo.
+
+REM Ejecutar la aplicación
+wails dev

@@ -19,6 +19,39 @@
         overflow: hidden;
       }
 
+      /* Scrollbar global para todos los elementos */
+      * {
+        scrollbar-width: thin;
+        scrollbar-color: #374248 #111b21;
+      }
+
+      *::-webkit-scrollbar {
+        width: 12px !important;
+        height: 12px !important;
+        -webkit-appearance: none;
+      }
+
+      *::-webkit-scrollbar-track {
+        background: #111b21 !important;
+        border-radius: 6px;
+        -webkit-box-shadow: inset 0 0 6px rgba(0,0,0,0.3);
+      }
+
+      *::-webkit-scrollbar-thumb {
+        background: #374248 !important;
+        border-radius: 6px;
+        border: 2px solid #111b21;
+        -webkit-box-shadow: inset 0 0 6px rgba(0,0,0,0.5);
+      }
+
+      *::-webkit-scrollbar-thumb:hover {
+        background: #4a5c66 !important;
+      }
+
+      *::-webkit-scrollbar-corner {
+        background: #111b21;
+      }
+
       .app-container {
         display: flex;
         height: 100vh;
@@ -102,12 +135,15 @@
 
       /* Sidebar de chats */
       .sidebar {
-        width: 350px;
+        width: 300px; /* Reducido para que quepa mejor */
+        min-width: 300px;
+        max-width: 300px;
         background: #111b21;
         border-right: 1px solid #2a3942;
         display: flex;
         flex-direction: column;
         display: none;
+        overflow: hidden;
       }
 
       .sidebar.active {
@@ -142,7 +178,38 @@
 
       .chats-list {
         flex: 1;
-        overflow-y: auto;
+        overflow-y: scroll !important;
+        overflow-x: hidden;
+        scrollbar-width: auto !important;
+        min-height: 0; /* Permite que se reduzca */
+        max-height: calc(100vh - 80px); /* Limitar altura máxima */
+      }
+
+      /* Scrollbar personalizado para chats-list */
+      .chats-list::-webkit-scrollbar {
+        width: 14px !important;
+        -webkit-appearance: none;
+      }
+
+      .chats-list::-webkit-scrollbar-track {
+        background: #111b21 !important;
+        border-radius: 7px;
+        -webkit-box-shadow: inset 0 0 6px rgba(0,0,0,0.3);
+      }
+
+      .chats-list::-webkit-scrollbar-thumb {
+        background: #374248 !important;
+        border-radius: 7px;
+        border: 2px solid #111b21;
+        -webkit-box-shadow: inset 0 0 6px rgba(0,0,0,0.5);
+      }
+
+      .chats-list::-webkit-scrollbar-thumb:hover {
+        background: #4a5c66 !important;
+      }
+
+      .chats-list::-webkit-scrollbar-corner {
+        background: #111b21;
       }
 
       .chat-item {
@@ -187,16 +254,18 @@
         display: block;
         height: 100vh;
         width: 100%;
+        overflow: hidden;
+        position: relative;
       }
 
       /* Panel de mensajes */
       .messages-panel {
-        flex: 1;
         display: none;
         flex-direction: row;
         background: #0b141a;
         height: 100vh;
-        width: 100%;
+        width: calc(100% - 140px); /* Restar el ancho de las pestañas */
+        overflow: hidden;
       }
 
       .messages-panel.active {
@@ -209,16 +278,20 @@
         display: flex;
         flex-direction: column;
         background: #0b141a;
+        min-width: 0; /* Permite que se reduzca */
+        overflow: hidden;
       }
 
       /* Panel de asociaciones */
       .associations-panel {
-        flex: 1;
         display: none;
         flex-direction: column;
         background: #0b141a;
         height: 100vh;
-        width: 100%;
+        width: calc(100% - 140px); /* Restar el ancho de las pestañas */
+        overflow: hidden;
+        margin-left: 140px; /* Espacio para las pestañas fijas */
+        padding: 0; /* Sin padding adicional */
       }
 
       .associations-panel.active {
@@ -278,9 +351,65 @@
       /* Tabla de asociaciones */
       .associations-table {
         flex: 1;
-        overflow-y: auto;
+        overflow-y: scroll !important;
+        overflow-x: hidden;
         padding: 20px;
-        max-height: calc(100vh - 200px);
+        display: flex;
+        flex-direction: column;
+        min-height: 0; /* Permite que se reduzca */
+        scrollbar-width: auto !important;
+      }
+
+      /* La tabla dentro del contenedor */
+      .associations-table table {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* Header de la tabla fijo */
+      .associations-table thead {
+        flex-shrink: 0;
+      }
+
+      /* Body de la tabla con scroll */
+      .associations-table tbody {
+        flex: 1;
+        overflow-y: auto;
+        overflow-x: hidden;
+        scrollbar-width: auto !important;
+      }
+
+      /* Scrollbar personalizado para associations-table */
+      .associations-table::-webkit-scrollbar,
+      .associations-table tbody::-webkit-scrollbar {
+        width: 14px !important;
+        -webkit-appearance: none;
+      }
+
+      .associations-table::-webkit-scrollbar-track,
+      .associations-table tbody::-webkit-scrollbar-track {
+        background: #111b21 !important;
+        border-radius: 7px;
+        -webkit-box-shadow: inset 0 0 6px rgba(0,0,0,0.3);
+      }
+
+      .associations-table::-webkit-scrollbar-thumb,
+      .associations-table tbody::-webkit-scrollbar-thumb {
+        background: #374248 !important;
+        border-radius: 7px;
+        border: 2px solid #111b21;
+        -webkit-box-shadow: inset 0 0 6px rgba(0,0,0,0.5);
+      }
+
+      .associations-table::-webkit-scrollbar-thumb:hover,
+      .associations-table tbody::-webkit-scrollbar-thumb:hover {
+        background: #4a5c66 !important;
+      }
+
+      .associations-table::-webkit-scrollbar-corner,
+      .associations-table tbody::-webkit-scrollbar-corner {
+        background: #111b21;
       }
 
       .associations-table table {
@@ -502,9 +631,40 @@
 
       .messages-container {
         flex: 1;
-        overflow-y: auto;
+        overflow-y: scroll !important;
+        overflow-x: hidden;
         padding: 20px;
+        scrollbar-width: auto !important;
+        min-height: 0; /* Permite que se reduzca */
+        max-height: calc(100vh - 120px); /* Limitar altura máxima */
         background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect fill="%23111b21" width="100" height="100"/></svg>');
+      }
+
+      /* Scrollbar personalizado para messages-container */
+      .messages-container::-webkit-scrollbar {
+        width: 14px !important;
+        -webkit-appearance: none;
+      }
+
+      .messages-container::-webkit-scrollbar-track {
+        background: #0b141a !important;
+        border-radius: 7px;
+        -webkit-box-shadow: inset 0 0 6px rgba(0,0,0,0.3);
+      }
+
+      .messages-container::-webkit-scrollbar-thumb {
+        background: #374248 !important;
+        border-radius: 7px;
+        border: 2px solid #0b141a;
+        -webkit-box-shadow: inset 0 0 6px rgba(0,0,0,0.5);
+      }
+
+      .messages-container::-webkit-scrollbar-thumb:hover {
+        background: #4a5c66 !important;
+      }
+
+      .messages-container::-webkit-scrollbar-corner {
+        background: #0b141a;
       }
 
       .message {

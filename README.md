@@ -12,7 +12,7 @@ Una aplicación de escritorio moderna para WhatsApp construida con **Go** y **Wa
 - 📱 **Conexión con WhatsApp Web**: Usa la librería whatsmeow para conectarse a tu cuenta
 - 💬 **Vista de Chats y Mensajes**: Interfaz similar a WhatsApp Web
 - 🔄 **Sincronización en Tiempo Real**: Recibe mensajes instantáneamente
-- 💾 **Base de Datos Local**: Almacena mensajes en SQLite
+- 💾 **Base de Datos MySQL**: Almacena mensajes en MySQL para mejor rendimiento y escalabilidad
 - 📨 **Enviar Mensajes**: Responde desde la aplicación de escritorio
 - 👥 **Soporte para Grupos**: Muestra números de teléfono y nombres de participantes
 - 🎨 **Interfaz Moderna**: UI oscura inspirada en WhatsApp Web
@@ -33,18 +33,13 @@ Una aplicación de escritorio moderna para WhatsApp construida con **Go** y **Wa
    go install github.com/wailsapp/wails/v2/cmd/wails@latest
    ```
 
-3. **GCC** (REQUERIDO para compilar sqlite3):
+3. **MySQL** (REQUERIDO para la base de datos):
 
-   - **Windows (Recomendado)**: [TDM-GCC](https://jmeubank.github.io/tdm-gcc/download/)
-     - Descarga el instalador
-     - Durante instalación, marca **"Add to PATH"**
-     - Reinicia la terminal después de instalar
-     - Verifica con: `gcc --version`
-   - Windows (Alternativa): [MinGW-w64](https://www.mingw-w64.org/)
-   - macOS: Ya incluido con Xcode Command Line Tools
-   - Linux: `sudo apt install build-essential`
+   - **Windows**: [MySQL Community Server](https://dev.mysql.com/downloads/mysql/) o [XAMPP](https://www.apachefriends.org/)
+   - **macOS**: `brew install mysql` o [MySQL Community Server](https://dev.mysql.com/downloads/mysql/)
+   - **Linux**: `sudo apt install mysql-server` o `sudo yum install mysql-server`
 
-   ⚠️ **MUY IMPORTANTE**: Sin GCC, obtendrás el error "CGO_ENABLED=0"
+   ⚠️ **IMPORTANTE**: La aplicación requiere MySQL para funcionar correctamente
 
 4. **Dependencias del Sistema** (según tu SO):
 
@@ -77,22 +72,29 @@ Una aplicación de escritorio moderna para WhatsApp construida con **Go** y **Wa
    cd loader-meow
    ```
 
-2. **Configurar CGO y dependencias**
+2. **Configurar MySQL**
 
-   **Windows (⚠️ IMPORTANTE):**
+   **Windows:**
 
    ```bash
-   ./setup-cgo.bat
+   ./setup-mysql.bat
    ```
 
    Este script:
 
-   - Verifica que GCC esté instalado
-   - Configura CGO_ENABLED=1
-   - Descarga las dependencias
-   - Limpia el cache de Wails
+   - Verifica que MySQL esté instalado
+   - Crea la base de datos `whatsapp_loader`
+   - Configura las credenciales de conexión
+   - Genera el archivo de configuración
 
    **macOS/Linux:**
+
+   ```bash
+   mysql -u root -p
+   CREATE DATABASE whatsapp_loader CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+   ```
+
+3. **Instalar dependencias**
 
    ```bash
    go mod download
@@ -105,17 +107,38 @@ Una aplicación de escritorio moderna para WhatsApp construida con **Go** y **Wa
 
 **Windows:**
 
-```bash
-./run-with-cgo.bat
-```
+1. Copia el archivo de configuración:
+
+   ```bash
+   copy run-dev.bat.example run-dev.bat
+   ```
+
+2. Edita `run-dev.bat` con tus credenciales de MySQL
+
+3. Ejecuta:
+   ```bash
+   ./run-dev.bat
+   ```
 
 **macOS/Linux:**
 
-```bash
-CGO_ENABLED=1 wails dev
-```
+1. Copia el archivo de configuración:
 
-⚠️ **IMPORTANTE**: En Windows, NO uses `wails dev` directamente. Siempre usa `run-with-cgo.bat` que habilita CGO automáticamente.
+   ```bash
+   cp mysql-config.env.example mysql-config.env
+   ```
+
+2. Edita `mysql-config.env` con tus credenciales
+
+3. Ejecuta:
+   ```bash
+   export $(cat mysql-config.env | xargs) && wails dev
+   ```
+
+⚠️ **IMPORTANTE**:
+
+- Asegúrate de que MySQL esté ejecutándose antes de iniciar la aplicación
+- NUNCA subas archivos con credenciales reales al repositorio
 
 ### Primera Conexión
 
@@ -133,13 +156,13 @@ CGO_ENABLED=1 wails dev
 **Windows:**
 
 ```bash
-./build-with-cgo.bat
+wails build
 ```
 
 **macOS/Linux:**
 
 ```bash
-CGO_ENABLED=1 wails build
+wails build
 ```
 
 El ejecutable se generará en la carpeta `build/bin/`:
@@ -209,9 +232,10 @@ loader-meow/
 
 ### Almacenamiento
 
-- **whatsapp.db**: Guarda la sesión y configuración de WhatsApp
-- **messages.db**: Almacena los mensajes para visualización offline
-- Los datos se guardan en la carpeta `store/` (no incluida en Git)
+- **MySQL Database**: Almacena todos los mensajes, chats y asociaciones de teléfonos
+- **whatsapp.db**: Guarda la sesión y configuración de WhatsApp (SQLite para whatsmeow)
+- Los datos de WhatsApp se guardan en la carpeta `store/` (no incluida en Git)
+- La base de datos MySQL se configura externamente
 
 ### Eventos en Tiempo Real
 
@@ -228,8 +252,8 @@ La aplicación usa el sistema de eventos de Wails para:
 
 - **Wails v2**: Framework para aplicaciones de escritorio
 - **whatsmeow**: Librería para conectarse a WhatsApp Web
-- **SQLite3**: Base de datos local
-- **go-sqlite3**: Driver de SQLite para Go
+- **MySQL**: Base de datos para mensajes y asociaciones
+- **go-sql-driver/mysql**: Driver de MySQL para Go
 
 ### Frontend
 
