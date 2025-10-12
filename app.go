@@ -447,6 +447,22 @@ func (a *App) GetUnprocessedMessagesWithRealPhone(limit int) ([]ProcessableMessa
 	return a.waService.messageStore.GetUnprocessedMessagesWithRealPhone(limit)
 }
 
+// GetProcessedMessagesToday obtiene mensajes procesados exitosamente hoy
+func (a *App) GetProcessedMessagesToday(limit int) ([]ProcessingResult, error) {
+	if a.waService == nil || a.waService.messageProcessor == nil {
+		return nil, fmt.Errorf("message processor not initialized")
+	}
+	return a.waService.messageProcessor.GetProcessedToday(limit)
+}
+
+// GetMessagesWithErrors obtiene mensajes que tuvieron errores al procesar
+func (a *App) GetMessagesWithErrors(limit int) ([]ProcessingResult, error) {
+	if a.waService == nil || a.waService.messageProcessor == nil {
+		return nil, fmt.Errorf("message processor not initialized")
+	}
+	return a.waService.messageProcessor.GetMessagesWithErrors(limit)
+}
+
 // ProcessSingleMessage procesa un solo mensaje por ID
 func (a *App) ProcessSingleMessage(messageID, chatJID string) (ProcessingResult, error) {
 	if a.messageProcessor == nil {
@@ -458,6 +474,185 @@ func (a *App) ProcessSingleMessage(messageID, chatJID string) (ProcessingResult,
 
 
 
+
+// ===================================
+// Gestión de Configuraciones del Sistema
+// ===================================
+
+// GetSystemConfigs obtiene todas las configuraciones del sistema
+func (a *App) GetSystemConfigs() ([]SystemConfig, error) {
+	if a.waService == nil || a.waService.systemConfigManager == nil {
+		return nil, fmt.Errorf("system config manager not initialized")
+	}
+	return a.waService.systemConfigManager.GetAllConfigs()
+}
+
+// UpdateSystemConfig actualiza una configuración del sistema
+func (a *App) UpdateSystemConfig(key, value, description string) error {
+	if a.waService == nil || a.waService.systemConfigManager == nil {
+		return fmt.Errorf("system config manager not initialized")
+	}
+	return a.waService.systemConfigManager.UpdateConfig(key, value, description)
+}
+
+// ===================================
+// Gestión de Configuración IA
+// ===================================
+
+// GetAIProviders obtiene todos los proveedores de IA disponibles
+func (a *App) GetAIProviders() ([]AIProvider, error) {
+	if a.waService == nil || a.waService.aiConfigManager == nil {
+		return nil, fmt.Errorf("AI config manager not initialized")
+	}
+	return a.waService.aiConfigManager.GetAllProviders()
+}
+
+// GetAIModelsByProvider obtiene los modelos disponibles para un proveedor
+func (a *App) GetAIModelsByProvider(providerID int) ([]AIModel, error) {
+	if a.waService == nil || a.waService.aiConfigManager == nil {
+		return nil, fmt.Errorf("AI config manager not initialized")
+	}
+	return a.waService.aiConfigManager.GetModelsByProvider(providerID)
+}
+
+// GetAIConfigs obtiene todas las configuraciones de API keys
+func (a *App) GetAIConfigs() ([]AIConfigDB, error) {
+	if a.waService == nil || a.waService.aiConfigManager == nil {
+		return nil, fmt.Errorf("AI config manager not initialized")
+	}
+	return a.waService.aiConfigManager.GetAllConfigs()
+}
+
+// GetActiveAIConfig obtiene la configuración actualmente activa
+func (a *App) GetActiveAIConfig() (*AIConfigDB, error) {
+	if a.waService == nil || a.waService.aiConfigManager == nil {
+		return nil, fmt.Errorf("AI config manager not initialized")
+	}
+	return a.waService.aiConfigManager.GetActiveConfig()
+}
+
+// AddAIConfig agrega una nueva configuración de API key
+func (a *App) AddAIConfig(providerID, modelID int, apiKey, name string) error {
+	if a.waService == nil || a.waService.aiConfigManager == nil {
+		return fmt.Errorf("AI config manager not initialized")
+	}
+	return a.waService.aiConfigManager.AddConfig(providerID, modelID, apiKey, name)
+}
+
+// AddAIConfigWithCustomModel agrega una configuración con un modelo personalizado
+func (a *App) AddAIConfigWithCustomModel(providerID int, modelName, apiKey, configName string) error {
+	if a.waService == nil || a.waService.aiConfigManager == nil {
+		return fmt.Errorf("AI config manager not initialized")
+	}
+	return a.waService.aiConfigManager.AddConfigWithCustomModel(providerID, modelName, apiKey, configName)
+}
+
+// UpdateAIConfig actualiza una configuración existente
+func (a *App) UpdateAIConfig(id int, apiKey, name string, isEnabled bool) error {
+	if a.waService == nil || a.waService.aiConfigManager == nil {
+		return fmt.Errorf("AI config manager not initialized")
+	}
+	return a.waService.aiConfigManager.UpdateConfig(id, apiKey, name, isEnabled)
+}
+
+// DeleteAIConfig elimina una configuración
+func (a *App) DeleteAIConfig(id int) error {
+	if a.waService == nil || a.waService.aiConfigManager == nil {
+		return fmt.Errorf("AI config manager not initialized")
+	}
+	return a.waService.aiConfigManager.DeleteConfig(id)
+}
+
+// SetActiveAIConfig establece una configuración como activa
+func (a *App) SetActiveAIConfig(id int) error {
+	if a.waService == nil || a.waService.aiConfigManager == nil {
+		return fmt.Errorf("AI config manager not initialized")
+	}
+	return a.waService.aiConfigManager.SetActiveConfig(id)
+}
+
+// ResetAIConfigErrors resetea el contador de errores de una configuración
+func (a *App) ResetAIConfigErrors(id int) error {
+	if a.waService == nil || a.waService.aiConfigManager == nil {
+		return fmt.Errorf("AI config manager not initialized")
+	}
+	return a.waService.aiConfigManager.ResetErrorCount(id)
+}
+
+// ToggleAIProvider habilita/deshabilita un proveedor
+func (a *App) ToggleAIProvider(id int, enabled bool) error {
+	if a.waService == nil || a.waService.aiConfigManager == nil {
+		return fmt.Errorf("AI config manager not initialized")
+	}
+	return a.waService.aiConfigManager.ToggleProvider(id, enabled)
+}
+
+// ToggleAIModel habilita/deshabilita un modelo
+func (a *App) ToggleAIModel(id int, enabled bool) error {
+	if a.waService == nil || a.waService.aiConfigManager == nil {
+		return fmt.Errorf("AI config manager not initialized")
+	}
+	return a.waService.aiConfigManager.ToggleModel(id, enabled)
+}
+
+// TestAIConfig prueba una configuración de IA
+func (a *App) TestAIConfig(configID int) (map[string]interface{}, error) {
+	if a.waService == nil || a.waService.aiConfigManager == nil {
+		return nil, fmt.Errorf("AI config manager not initialized")
+	}
+	
+	// Obtener la configuración
+	configs, err := a.waService.aiConfigManager.GetAllConfigs()
+	if err != nil {
+		return nil, err
+	}
+	
+	var testConfig *AIConfigDB
+	for _, c := range configs {
+		if c.ID == configID {
+			testConfig = &c
+			break
+		}
+	}
+	
+	if testConfig == nil {
+		return nil, fmt.Errorf("config not found")
+	}
+	
+	// Mensaje de prueba simple
+	testMessage := "Hola, este es un mensaje de prueba para verificar la configuración de IA."
+	
+	startTime := time.Now()
+	
+	// Intentar procesar con el proveedor específico
+	providerService := NewAIProviderService(a.waService.aiConfigManager)
+	
+	// Temporalmente activar esta config para la prueba
+	originalActive, _ := a.waService.aiConfigManager.GetActiveConfig()
+	a.waService.aiConfigManager.SetActiveConfig(configID)
+	
+	_, err = providerService.ProcessMessage("Eres un asistente de prueba.", testMessage, "test")
+	
+	// Restaurar configuración original
+	if originalActive != nil {
+		a.waService.aiConfigManager.SetActiveConfig(originalActive.ID)
+	}
+	
+	elapsed := time.Since(startTime).Seconds()
+	
+	result := map[string]interface{}{
+		"success": err == nil,
+		"elapsed": elapsed,
+		"provider": testConfig.ProviderDisplay,
+		"model": testConfig.ModelDisplay,
+	}
+	
+	if err != nil {
+		result["error"] = err.Error()
+	}
+	
+	return result, nil
+}
 
 // Disconnect desconecta WhatsApp
 func (a *App) Disconnect() {

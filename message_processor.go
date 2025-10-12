@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	waLog "go.mau.fi/whatsmeow/util/log"
@@ -11,10 +12,13 @@ import (
 
 // MessageProcessor orquesta el procesamiento de mensajes con IA
 type MessageProcessor struct {
-	messageStore    *MessageStore
-	aiService       *AIService
-	supabaseService *SupabaseService
-	logger          waLog.Logger
+	messageStore      *MessageStore
+	aiService         *AIService // Mantener por compatibilidad
+	aiProviderService *AIProviderService // Nuevo servicio multi-proveedor
+	aiConfigManager   *AIConfigManager
+	supabaseService   *SupabaseService
+	systemPrompt      string
+	logger            waLog.Logger
 }
 
 // ProcessingResult representa el resultado del procesamiento de un mensaje
@@ -34,29 +38,34 @@ type ProcessingResult struct {
 }
 
 // NewMessageProcessor crea una nueva instancia del procesador de mensajes
-func NewMessageProcessor(messageStore *MessageStore, logger waLog.Logger, keysManager *APIKeysManager) (*MessageProcessor, error) {
-	// Inicializar servicio de IA
-	aiService, err := NewAIService(keysManager)
+func NewMessageProcessor(messageStore *MessageStore, logger waLog.Logger, keysManager *APIKeysManager, aiConfigManager *AIConfigManager, systemConfigManager *SystemConfigManager) (*MessageProcessor, error) {
+	// Cargar system prompt
+	systemPrompt, err := loadSystemPrompt()
 	if err != nil {
-		// Si falla por falta de configuración, crear el processor sin IA
-		// Se podrá configurar luego desde la UI
-		logger.Warnf("AI service not available: %v", err)
-		return &MessageProcessor{
-			messageStore:    messageStore,
-			aiService:       nil,
-			supabaseService: NewSupabaseService(),
-			logger:          logger,
-		}, nil
+		logger.Warnf("Failed to load system prompt: %v", err)
+		systemPrompt = "Eres un asistente de IA."
 	}
 	
-	// Inicializar servicio de Supabase
-	supabaseService := NewSupabaseService()
+	// Inicializar servicio de IA legacy (mantener por compatibilidad)
+	aiService, err := NewAIService(keysManager)
+	if err != nil {
+		logger.Warnf("AI service (legacy) not available: %v", err)
+	}
+	
+	// Inicializar nuevo servicio multi-proveedor
+	aiProviderService := NewAIProviderService(aiConfigManager)
+	
+	// Inicializar servicio de Supabase con system config manager
+	supabaseService := NewSupabaseService(systemConfigManager)
 	
 	return &MessageProcessor{
-		messageStore:    messageStore,
-		aiService:       aiService,
-		supabaseService: supabaseService,
-		logger:          logger,
+		messageStore:      messageStore,
+		aiService:         aiService,
+		aiProviderService: aiProviderService,
+		aiConfigManager:   aiConfigManager,
+		supabaseService:   supabaseService,
+		systemPrompt:      systemPrompt,
+		logger:            logger,
 	}, nil
 }
 
@@ -125,21 +134,37 @@ func (p *MessageProcessor) processMessage(msg ProcessableMessage) ProcessingResu
 		ProcessedAt: time.Now(),
 	}
 	
-	// Verificar si el servicio de IA está disponible
-	if p.aiService == nil {
-		result.Status = "error"
-		result.ErrorMessage = "AI service not configured. Please configure API keys."
-		p.logger.Errorf("AI service not available")
-		return result
+	// Verificar si hay configuración activa de IA
+	activeConfig, err := p.aiConfigManager.GetActiveConfig()
+	if err != nil {
+		// Intentar usar el servicio legacy si está disponible
+		if p.aiService == nil {
+			result.Status = "error"
+			result.ErrorMessage = "No active AI configuration found. Please configure AI settings."
+			p.logger.Errorf("No AI service available")
+			return result
+		}
+		p.logger.Warnf("Using legacy AI service")
 	}
 	
-	// 1. Procesar con IA
+	var aiResponse []byte
+	
+	// 1. Procesar con IA usando el nuevo sistema multi-proveedor
 	p.logger.Infof("Llamando a IA para mensaje %s", msg.ID)
-	aiResponse, err := p.aiService.ProcessMessage(msg.Content, msg.RealPhone)
+	
+	if activeConfig != nil {
+		// Usar nuevo sistema multi-proveedor
+		aiResponse, err = p.aiProviderService.ProcessMessage(p.systemPrompt, msg.Content, msg.RealPhone)
+	} else {
+		// Usar sistema legacy
+		aiResponse, err = p.aiService.ProcessMessage(msg.Content, msg.RealPhone)
+	}
+	
 	if err != nil {
 		result.Status = "error"
 		result.ErrorMessage = fmt.Sprintf("AI processing failed: %v", err)
 		p.logger.Errorf("Error en procesamiento IA: %v", err)
+		p.logger.Errorf("🔴 PROCESAMIENTO FINALIZADO CON ERROR para mensaje %s", msg.ID)
 		return result
 	}
 	
@@ -147,29 +172,62 @@ func (p *MessageProcessor) processMessage(msg ProcessableMessage) ProcessingResu
 	p.logger.Infof("IA respondió para mensaje %s", msg.ID)
 	
 	// 2. Validar respuesta de IA
-	if err := p.aiService.ValidateResponse(aiResponse); err != nil {
+	if err := p.aiProviderService.ValidateResponse(aiResponse); err != nil {
 		result.Status = "error"
 		result.ErrorMessage = fmt.Sprintf("Invalid AI response: %v", err)
 		p.logger.Errorf("Respuesta de IA inválida: %v", err)
 		return result
 	}
 	
+	// 2.5. Normalizar respuesta (convertir objeto único a array si es necesario)
+	normalizedResponse, err := p.aiProviderService.NormalizeResponse(aiResponse)
+	if err != nil {
+		result.Status = "error"
+		result.ErrorMessage = fmt.Sprintf("Failed to normalize AI response: %v", err)
+		p.logger.Errorf("Error normalizando respuesta: %v", err)
+		return result
+	}
+	
+	// Actualizar AIResponse con la versión normalizada
+	result.AIResponse = string(normalizedResponse)
+	
+	// 2.6. Verificar si el array está vacío (mensaje sin información suficiente)
+	var cargasTemp []map[string]interface{}
+	json.Unmarshal(normalizedResponse, &cargasTemp)
+	
+	if len(cargasTemp) == 0 {
+		result.Status = "success"
+		result.ErrorMessage = "No hay información de carga válida en el mensaje (array vacío)"
+		p.logger.Infof("Mensaje %s: No contiene información de carga válida (array vacío)", msg.ID)
+		return result
+	}
+	
+	// 2.7. Validar que las ubicaciones sean reales
+	if err := p.validateLocations(normalizedResponse); err != nil {
+		result.Status = "error"
+		result.ErrorMessage = fmt.Sprintf("Invalid locations: %v", err)
+		result.AIResponse = string(normalizedResponse)
+		p.logger.Warnf("Mensaje rechazado por ubicaciones inválidas: %v", err)
+		return result
+	}
+	
 	// 3. Subir a Supabase
 	p.logger.Infof("Subiendo a Supabase para mensaje %s", msg.ID)
-	p.logger.Infof("JSON de IA para Supabase: %s", string(aiResponse))
-	supabaseIDs, err := p.supabaseService.CrearCargasDesdeJSON(aiResponse)
+	p.logger.Infof("JSON de IA para Supabase: %s", string(normalizedResponse))
+	supabaseIDs, err := p.supabaseService.CrearCargasDesdeJSON(normalizedResponse)
 	if err != nil {
 		result.Status = "error"
 		result.ErrorMessage = fmt.Sprintf("Supabase upload failed: %v", err)
-		result.AIResponse = string(aiResponse) // Guardar respuesta de IA aunque falle Supabase
+		result.AIResponse = string(normalizedResponse) // Guardar respuesta normalizada
 		p.logger.Errorf("Error subiendo a Supabase: %v", err)
-		p.logger.Errorf("JSON que causó el error: %s", string(aiResponse))
+		p.logger.Errorf("JSON que causó el error: %s", string(normalizedResponse))
 		return result
 	}
 	
 	result.SupabaseIDs = supabaseIDs
 	result.Status = "success"
 	p.logger.Infof("Mensaje %s procesado exitosamente: %d cargas creadas", msg.ID, len(supabaseIDs))
+	p.logger.Infof("🟢 PROCESAMIENTO FINALIZADO EXITOSAMENTE para mensaje %s", msg.ID)
 	
 	return result
 }
@@ -343,5 +401,200 @@ func (p *MessageProcessor) ProcessSingleMessage(messageID, chatJID string) (Proc
 		}
 	}
 	
+	p.logger.Infof("🏁 ProcessSingleMessage finalizando - devolviendo resultado con status: %s", result.Status)
 	return result, nil
 }
+
+// validateLocations valida que las ubicaciones en la respuesta sean válidas
+func (p *MessageProcessor) validateLocations(jsonData []byte) error {
+	var cargas []map[string]interface{}
+	if err := json.Unmarshal(jsonData, &cargas); err != nil {
+		return fmt.Errorf("failed to parse JSON for validation: %v", err)
+	}
+	
+	// Palabras inválidas que indican ubicación desconocida
+	invalidTerms := []string{
+		"desconocida",
+		"desconocido",
+		"unknown",
+		"sin especificar",
+		"no especificado",
+		"n/a",
+		"no disponible",
+		"sin datos",
+	}
+	
+	// Países NO permitidos (solo Argentina está permitida)
+	forbiddenCountries := []string{
+		"brasil", "brazil",
+		"chile",
+		"uruguay",
+		"paraguay",
+		"bolivia",
+		"perú", "peru",
+		"ecuador",
+		"colombia",
+		"venezuela",
+		"mexico", "méxico",
+	}
+	
+	for i, carga := range cargas {
+		// Validar localidad de carga
+		localidadCarga, _ := carga["localidadCarga"].(string)
+		if localidadCarga == "" {
+			return fmt.Errorf("carga %d: localidadCarga está vacía", i+1)
+		}
+		
+		localidadCargaLower := strings.ToLower(localidadCarga)
+		
+		// Verificar que sea de Argentina
+		if !strings.Contains(localidadCargaLower, "argentina") {
+			return fmt.Errorf("carga %d: localidadCarga '%s' no contiene 'Argentina' - solo se procesan ubicaciones argentinas", i+1, localidadCarga)
+		}
+		
+		// Verificar que NO contenga países prohibidos
+		for _, country := range forbiddenCountries {
+			if strings.Contains(localidadCargaLower, country) {
+				return fmt.Errorf("carga %d: localidadCarga contiene '%s' - solo se procesan ubicaciones de Argentina", i+1, country)
+			}
+		}
+		
+		// Verificar términos inválidos
+		for _, term := range invalidTerms {
+			if strings.Contains(localidadCargaLower, term) {
+				return fmt.Errorf("carga %d: localidadCarga contiene '%s' - el mensaje no tiene información de ubicación válida", i+1, term)
+			}
+		}
+		
+		// Validar localidad de descarga
+		localidadDescarga, _ := carga["localidadDescarga"].(string)
+		if localidadDescarga == "" {
+			return fmt.Errorf("carga %d: localidadDescarga está vacía", i+1)
+		}
+		
+		localidadDescargaLower := strings.ToLower(localidadDescarga)
+		
+		// Verificar que sea de Argentina
+		if !strings.Contains(localidadDescargaLower, "argentina") {
+			return fmt.Errorf("carga %d: localidadDescarga '%s' no contiene 'Argentina' - solo se procesan ubicaciones argentinas", i+1, localidadDescarga)
+		}
+		
+		// Verificar que NO contenga países prohibidos
+		for _, country := range forbiddenCountries {
+			if strings.Contains(localidadDescargaLower, country) {
+				return fmt.Errorf("carga %d: localidadDescarga contiene '%s' - solo se procesan ubicaciones de Argentina", i+1, country)
+			}
+		}
+		
+		// Verificar términos inválidos
+		for _, term := range invalidTerms {
+			if strings.Contains(localidadDescargaLower, term) {
+				return fmt.Errorf("carga %d: localidadDescarga contiene '%s' - el mensaje no tiene información de ubicación válida", i+1, term)
+			}
+		}
+	}
+	
+	return nil
+}
+
+// GetProcessedToday obtiene mensajes procesados exitosamente hoy
+func (p *MessageProcessor) GetProcessedToday(limit int) ([]ProcessingResult, error) {
+	query := `
+		SELECT 
+			id, message_id, chat_jid, content, sender_phone, real_phone, 
+			ai_response, status, error_message, supabase_ids, processed_at
+		FROM ai_processing_results
+		WHERE status = 'success' 
+		  AND DATE(processed_at) = CURDATE()
+		ORDER BY processed_at DESC
+		LIMIT ?
+	`
+	
+	rows, err := p.messageStore.db.Query(query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	
+	var results []ProcessingResult
+	for rows.Next() {
+		var result ProcessingResult
+		var supabaseIDsJSON sql.NullString
+		var errorMsg sql.NullString
+		var aiResponse sql.NullString
+		
+		err := rows.Scan(
+			&result.ID, &result.MessageID, &result.ChatJID, &result.Content,
+			&result.SenderPhone, &result.RealPhone, &aiResponse, &result.Status,
+			&errorMsg, &supabaseIDsJSON, &result.ProcessedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		
+		if aiResponse.Valid {
+			result.AIResponse = aiResponse.String
+		}
+		if errorMsg.Valid {
+			result.ErrorMessage = errorMsg.String
+		}
+		if supabaseIDsJSON.Valid && supabaseIDsJSON.String != "" {
+			json.Unmarshal([]byte(supabaseIDsJSON.String), &result.SupabaseIDs)
+		}
+		
+		results = append(results, result)
+	}
+	
+	return results, nil
+}
+
+// GetMessagesWithErrors obtiene mensajes que tuvieron errores
+func (p *MessageProcessor) GetMessagesWithErrors(limit int) ([]ProcessingResult, error) {
+	query := `
+		SELECT 
+			id, message_id, chat_jid, content, sender_phone, real_phone, 
+			ai_response, status, error_message, supabase_ids, processed_at
+		FROM ai_processing_results
+		WHERE status = 'error'
+		ORDER BY processed_at DESC
+		LIMIT ?
+	`
+	
+	rows, err := p.messageStore.db.Query(query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	
+	var results []ProcessingResult
+	for rows.Next() {
+		var result ProcessingResult
+		var supabaseIDsJSON sql.NullString
+		var errorMsg sql.NullString
+		var aiResponse sql.NullString
+		
+		err := rows.Scan(
+			&result.ID, &result.MessageID, &result.ChatJID, &result.Content,
+			&result.SenderPhone, &result.RealPhone, &aiResponse, &result.Status,
+			&errorMsg, &supabaseIDsJSON, &result.ProcessedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		
+		if aiResponse.Valid {
+			result.AIResponse = aiResponse.String
+		}
+		if errorMsg.Valid {
+			result.ErrorMessage = errorMsg.String
+		}
+		if supabaseIDsJSON.Valid && supabaseIDsJSON.String != "" {
+			json.Unmarshal([]byte(supabaseIDsJSON.String), &result.SupabaseIDs)
+		}
+		
+		results = append(results, result)
+	}
+	
+	return results, nil
+}
+

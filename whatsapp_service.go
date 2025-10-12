@@ -20,14 +20,16 @@ import (
 
 // WhatsAppService maneja la conexión y operaciones de WhatsApp
 type WhatsAppService struct {
-	client           *whatsmeow.Client
-	messageStore     *MessageStore
-	messageProcessor *MessageProcessor
-	logger           waLog.Logger
-	qrChan           <-chan whatsmeow.QRChannelItem
-	onMessage        func(ChatMessage)
-	onQRCode         func(string)
-	onConnected      func()
+	client              *whatsmeow.Client
+	messageStore        *MessageStore
+	messageProcessor    *MessageProcessor
+	aiConfigManager     *AIConfigManager
+	systemConfigManager *SystemConfigManager
+	logger              waLog.Logger
+	qrChan              <-chan whatsmeow.QRChannelItem
+	onMessage           func(ChatMessage)
+	onQRCode            func(string)
+	onConnected         func()
 	onPhoneAssociationNeeded func(PhoneAssociationRequest)
 }
 
@@ -179,6 +181,72 @@ func NewMessageStore() (*MessageStore, error) {
 	}
 
 	return &MessageStore{db: db}, nil
+}
+
+// InitAIConfigTables inicializa las tablas de configuración de IA
+func (store *MessageStore) InitAIConfigTables() error {
+	// Leer el SQL desde el archivo de migración
+	sqlFile := "migrations/create_ai_config_tables.sql"
+	sqlBytes, err := os.ReadFile(sqlFile)
+	if err != nil {
+		return fmt.Errorf("failed to read AI config migration file: %v", err)
+	}
+	
+	sqlContent := string(sqlBytes)
+	
+	// Dividir en statements individuales
+	statements := splitSQLStatements(sqlContent)
+	
+	// Ejecutar cada statement
+	for _, stmt := range statements {
+		stmt = strings.TrimSpace(stmt)
+		if stmt == "" || strings.HasPrefix(stmt, "--") {
+			continue
+		}
+		
+		_, err := store.db.Exec(stmt)
+		if err != nil {
+			// Log pero no fallar si la tabla ya existe
+			if !strings.Contains(err.Error(), "already exists") && 
+			   !strings.Contains(err.Error(), "Duplicate") {
+				return fmt.Errorf("failed to execute AI config migration: %v\nStatement: %s", err, stmt)
+			}
+		}
+	}
+	
+	return nil
+}
+
+// splitSQLStatements divide un archivo SQL en statements individuales
+func splitSQLStatements(sql string) []string {
+	var statements []string
+	var current strings.Builder
+	
+	lines := strings.Split(sql, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		
+		// Ignorar comentarios
+		if strings.HasPrefix(trimmed, "--") {
+			continue
+		}
+		
+		current.WriteString(line)
+		current.WriteString("\n")
+		
+		// Si termina con ; , es el final de un statement
+		if strings.HasSuffix(trimmed, ";") {
+			statements = append(statements, current.String())
+			current.Reset()
+		}
+	}
+	
+	// Agregar el último statement si hay uno
+	if current.Len() > 0 {
+		statements = append(statements, current.String())
+	}
+	
+	return statements
 }
 
 // isIndexExistsError verifica si el error es porque el índice ya existe
@@ -601,23 +669,36 @@ func NewWhatsAppService() (*WhatsAppService, error) {
 		return nil, fmt.Errorf("failed to initialize message store: %v", err)
 	}
 
-	// Inicializar API keys manager
+	// Inicializar tablas de configuración de IA
+	if err := messageStore.InitAIConfigTables(); err != nil {
+		return nil, fmt.Errorf("failed to initialize AI config tables: %v", err)
+	}
+
+	// Inicializar AI config manager
+	aiConfigManager := NewAIConfigManager(messageStore.db)
+	
+	// Inicializar System config manager
+	systemConfigManager := NewSystemConfigManager(messageStore.db)
+
+	// Inicializar API keys manager (mantener por compatibilidad)
 	keysManager, err := NewAPIKeysManager()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API keys manager: %v", err)
 	}
 
-	// Inicializar message processor
-	messageProcessor, err := NewMessageProcessor(messageStore, logger, keysManager)
+	// Inicializar message processor con el nuevo sistema
+	messageProcessor, err := NewMessageProcessor(messageStore, logger, keysManager, aiConfigManager, systemConfigManager)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create message processor: %v", err)
 	}
 
 	service := &WhatsAppService{
-		client:           client,
-		messageStore:     messageStore,
-		messageProcessor: messageProcessor,
-		logger:           logger,
+		client:              client,
+		messageStore:        messageStore,
+		messageProcessor:    messageProcessor,
+		aiConfigManager:     aiConfigManager,
+		systemConfigManager: systemConfigManager,
+		logger:              logger,
 	}
 
 	// Configurar event handler

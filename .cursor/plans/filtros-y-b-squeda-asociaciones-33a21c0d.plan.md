@@ -4,9 +4,11 @@
 ## 1. Backend: Estructura de datos y base de datos
 
 ### 1.1 Crear tabla de resultados de procesamiento
+
 **Archivo**: `whatsapp_service.go` - función `NewMessageStore()`
 
 Agregar nueva tabla en el schema:
+
 ```sql
 CREATE TABLE IF NOT EXISTS ai_processing_results (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -27,6 +29,7 @@ CREATE TABLE IF NOT EXISTS ai_processing_results (
 Status posibles: "pending", "processing", "success", "error", "uploaded"
 
 ### 1.2 Agregar función para obtener mensajes procesables
+
 **Archivo**: `whatsapp_service.go`
 
 ```go
@@ -52,6 +55,7 @@ func (store *MessageStore) GetProcessableMessages(limit int) ([]ChatMessage, err
 ## 2. Backend: Integración con Gemini API
 
 ### 2.1 Crear archivo de configuración
+
 **Nuevo archivo**: `ai_config.go`
 
 ```go
@@ -77,6 +81,7 @@ func GetAIConfig() *AIConfig {
 ```
 
 ### 2.2 Crear servicio de IA
+
 **Nuevo archivo**: `ai_service.go`
 
 ```go
@@ -139,6 +144,7 @@ func (s *AIService) ProcessMessage(content string, realPhone string) ([]byte, er
 ## 3. Backend: Integración con Supabase
 
 ### 3.1 Crear servicio de Supabase
+
 **Nuevo archivo**: `supabase_service.go`
 
 ```go
@@ -193,6 +199,7 @@ func (s *SupabaseService) ObtenerOCrearUbicacion(direccion string) (string, erro
 ## 4. Backend: Orquestador de procesamiento
 
 ### 4.1 Crear procesador principal
+
 **Nuevo archivo**: `message_processor.go`
 
 ```go
@@ -263,6 +270,7 @@ func (p *MessageProcessor) processMessage(msg ChatMessage) ProcessingResult {
 ## 5. Backend: Exponer funciones a frontend
 
 ### 5.1 Actualizar app.go
+
 **Archivo**: `app.go`
 
 ```go
@@ -294,6 +302,7 @@ func (a *App) GetProcessableMessagesCount() (int, error) {
 ## 6. Backend: Configuración automática en background
 
 ### 6.1 Agregar goroutine de procesamiento automático
+
 **Archivo**: `whatsapp_service.go`
 
 ```go
@@ -313,9 +322,11 @@ func (s *WhatsAppService) startAutoProcessor() {
 ## 7. Frontend: Nueva pestaña de Procesamiento IA
 
 ### 7.1 Actualizar HTML con nueva pestaña
+
 **Archivo**: `frontend/dist/index.html`
 
 Agregar en sección de tabs:
+
 ```html
 <button class="tab" onclick="showTab('processing')">
   🤖 Procesamiento IA
@@ -323,6 +334,7 @@ Agregar en sección de tabs:
 ```
 
 Agregar nuevo panel:
+
 ```html
 <div id="processingPanel" class="processing-panel">
   <div class="processing-header">
@@ -374,6 +386,7 @@ Agregar nuevo panel:
 ```
 
 ### 7.2 Agregar estilos CSS
+
 **Archivo**: `frontend/dist/index.html` (dentro de `<style>`)
 
 ```css
@@ -417,6 +430,7 @@ Agregar nuevo panel:
 ```
 
 ### 7.3 Agregar JavaScript
+
 **Archivo**: `frontend/dist/index.html` (dentro de `<script>`)
 
 ```javascript
@@ -483,9 +497,11 @@ function renderProcessingResults(results) {
 ## 8. Archivos de configuración
 
 ### 8.1 Actualizar .gitignore
+
 **Archivo**: `.gitignore`
 
 Agregar:
+
 ```
 # AI API Keys
 ai-config.env
@@ -493,6 +509,7 @@ ai-config.env
 ```
 
 ### 8.2 Crear archivo de ejemplo
+
 **Nuevo archivo**: `ai-config.env.example`
 
 ```
@@ -505,9 +522,11 @@ GOOGLE_MAPS_API_KEY=AIzaSyASe9Id-6Dr6lxr5mCb7O3l2HlmNrY-mRU
 ## 9. Documentación
 
 ### 9.1 Actualizar README
+
 **Archivo**: `README.md`
 
 Agregar sección:
+
 ```markdown
 ## Procesamiento con IA
 
@@ -534,7 +553,6 @@ La aplicación puede procesar automáticamente mensajes de WhatsApp para generar
 7. Background processor (6.1)
 8. Frontend (7.1, 7.2, 7.3)
 9. Documentación (9.1)
-
 
 ### To-dos
 

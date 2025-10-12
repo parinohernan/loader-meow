@@ -6,15 +6,17 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
 
 // SupabaseService maneja la integración con Supabase
 type SupabaseService struct {
-	url    string
-	apiKey string
-	client *http.Client
+	url                 string
+	apiKey              string
+	client              *http.Client
+	systemConfigManager *SystemConfigManager
 }
 
 // CargaData representa los datos de una carga para Supabase
@@ -120,10 +122,22 @@ type FormaPago struct {
 }
 
 // NewSupabaseService crea una nueva instancia del servicio de Supabase
-func NewSupabaseService() *SupabaseService {
+func NewSupabaseService(systemConfigManager *SystemConfigManager) *SupabaseService {
+	var url, apiKey string
+	
+	if systemConfigManager != nil {
+		url = systemConfigManager.GetSupabaseURL()
+		apiKey = systemConfigManager.GetSupabaseAPIKey()
+	} else {
+		// Fallback a valores por defecto
+		url = "https://ikiusmdtltakhmmlljsp.supabase.co"
+		apiKey = getEnvAI("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlraXVzbWR0bHRha2htbWxsanNwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQ2MjkyMzEsImV4cCI6MjA1MDIwNTIzMX0.q6NMMUK2ONGFs-b10XZySVlQiCXSLsjZbtBZyUTiVjc")
+	}
+	
 	return &SupabaseService{
-		url:    "https://ikiusmdtltakhmmlljsp.supabase.co",
-		apiKey: getEnvAI("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlraXVzbWR0bHRha2htbWxsanNwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQ2MjkyMzEsImV4cCI6MjA1MDIwNTIzMX0.q6NMMUK2ONGFs-b10XZySVlQiCXSLsjZbtBZyUTiVjc"),
+		url:                 url,
+		apiKey:              apiKey,
+		systemConfigManager: systemConfigManager,
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -242,8 +256,190 @@ func (s *SupabaseService) obtenerOCrearUbicacion(direccion string) (string, erro
 	return newID, nil
 }
 
-// buscarUbicacion busca una ubicación existente en Supabase
+// buscarUbicacion busca una ubicación existente en Supabase con múltiples estrategias
 func (s *SupabaseService) buscarUbicacion(direccion string) (string, error) {
+	fmt.Printf("🔍 Intentando buscar '%s' en Supabase...\n", direccion)
+	
+	// Generar variaciones de la dirección para buscar
+	variaciones := s.generarVariacionesDireccion(direccion)
+	
+	// Intentar cada variación
+	for i, variacion := range variaciones {
+		fmt.Printf("   [%d/%d] Buscando: '%s'\n", i+1, len(variaciones), variacion)
+		
+		ubicacionID, err := s.buscarUbicacionExacta(variacion)
+		if err == nil && ubicacionID != "" {
+			fmt.Printf("   ✅ ¡Encontrada! ID: %s\n", ubicacionID)
+			return ubicacionID, nil
+		}
+		fmt.Printf("   ❌ No encontrada\n")
+	}
+	
+	fmt.Printf("❌ Ubicación no encontrada en Supabase después de %d intentos\n", len(variaciones))
+	return "", fmt.Errorf("ubicacion not found after %d attempts", len(variaciones))
+}
+
+// generarVariacionesDireccion genera diferentes variaciones de una dirección para buscar
+// 
+// Esta función intenta múltiples transformaciones de la dirección para encontrar coincidencias
+// en Supabase antes de llamar a Google Maps Geocoding (ahorrando tiempo y dinero).
+//
+// PARA AGREGAR MÁS CASOS:
+// 1. Copia un bloque existente (ej: CASO 8)
+// 2. Modifica la transformación según necesites
+// 3. Asegúrate de verificar que la variación sea diferente antes de agregarla
+// 4. Actualiza el ejemplo de entrada/salida en los comentarios
+//
+// EJEMPLO DE ENTRADA: "América, Buenos Aires, Argentina"
+// SALIDAS GENERADAS: Ver cada caso individual abajo
+//
+func (s *SupabaseService) generarVariacionesDireccion(direccion string) []string {
+	variaciones := []string{}
+	
+	// Dividir la dirección en partes (ciudad, provincia, país)
+	partes := strings.SplitN(direccion, ",", 3)
+	
+	// ========================================================================
+	// === CASO 1: Búsqueda exacta (tal cual viene de la IA) ===
+	// ========================================================================
+	// Entrada:  "América, Buenos Aires, Argentina"
+	// Salida:   "América, Buenos Aires, Argentina"
+	// Razón:    Puede que ya esté exactamente así en la BD
+	variaciones = append(variaciones, direccion)
+	
+	// ========================================================================
+	// === CASO 2: Agregar "Province," antes de "Argentina" ===
+	// ========================================================================
+	// Entrada:  "América, Buenos Aires, Argentina"
+	// Salida:   "América, Buenos Aires Province, Argentina"
+	// Razón:    Google Maps a veces devuelve "Buenos Aires Province" en lugar de "Buenos Aires"
+	if strings.Contains(direccion, ", Argentina") {
+		variacion2 := strings.Replace(direccion, ", Argentina", " Province, Argentina", 1)
+		variaciones = append(variaciones, variacion2)
+	}
+	
+	// ========================================================================
+	// === CASO 3: Quitar la primera coma (unir ciudad y provincia con espacio) ===
+	// ========================================================================
+	// Entrada:  "América, Buenos Aires, Argentina"
+	// Salida:   "América Buenos Aires, Argentina"
+	// Razón:    A veces las ciudades se guardan con el formato "Ciudad Provincia, País"
+	if len(partes) >= 3 {
+		variacion3 := strings.TrimSpace(partes[0]) + " " + strings.TrimSpace(partes[1]) + ", " + strings.TrimSpace(partes[2])
+		variaciones = append(variaciones, variacion3)
+	}
+	
+	// ========================================================================
+	// === CASO 4: Combinar casos 2 y 3 (sin primera coma + Province) ===
+	// ========================================================================
+	// Entrada:  "América, Buenos Aires, Argentina"
+	// Salida:   "América Buenos Aires Province, Argentina"
+	// Razón:    Formato común de Google Maps: "Ciudad Provincia Province, País"
+	if len(partes) >= 3 {
+		variacion4 := strings.TrimSpace(partes[0]) + " " + strings.TrimSpace(partes[1]) + " Province, " + strings.TrimSpace(partes[2])
+		variaciones = append(variaciones, variacion4)
+	}
+	
+	// ========================================================================
+	// === CASO 5: Solo la primera parte (solo ciudad) ===
+	// ========================================================================
+	// Entrada:  "América, Buenos Aires, Argentina"
+	// Salida:   "América"
+	// Razón:    A veces se guarda solo el nombre de la ciudad
+	if len(partes) >= 1 {
+		ciudad := strings.TrimSpace(partes[0])
+		if ciudad != "" && ciudad != direccion {
+			variaciones = append(variaciones, ciudad)
+		}
+	}
+	
+	// ========================================================================
+	// === CASO 6: Primera y segunda parte sin país ===
+	// ========================================================================
+	// Entrada:  "América, Buenos Aires, Argentina"
+	// Salida:   "América, Buenos Aires"
+	// Razón:    Formato sin el país
+	if len(partes) >= 2 {
+		variacion6 := strings.TrimSpace(partes[0]) + ", " + strings.TrimSpace(partes[1])
+		variaciones = append(variaciones, variacion6)
+	}
+	
+	// ========================================================================
+	// === CASO 7: Quitar todas las comas (todo junto con espacios) ===
+	// ========================================================================
+	// Entrada:  "América, Buenos Aires, Argentina"
+	// Salida:   "América Buenos Aires Argentina"
+	// Razón:    Formato sin separadores
+	variacion7 := strings.ReplaceAll(direccion, ",", " ")
+	variacion7 = strings.Join(strings.Fields(variacion7), " ") // Normalizar espacios múltiples
+	if variacion7 != direccion {
+		variaciones = append(variaciones, variacion7)
+	}
+	
+	// ========================================================================
+	// === CASOS 8-14: Repetir todos los casos anteriores SIN ACENTOS ===
+	// ========================================================================
+	// Razón: Supabase puede tener ubicaciones guardadas sin acentos (ej: "Tucuman" vs "Tucumán")
+	// Para cada variación generada arriba, crear una versión sin acentos
+	
+	variacionesSinAcentos := []string{}
+	for _, v := range variaciones {
+		sinAcentos := removerAcentos(v)
+		if sinAcentos != v { // Solo agregar si es diferente
+			variacionesSinAcentos = append(variacionesSinAcentos, sinAcentos)
+		}
+	}
+	
+	// Agregar todas las variaciones sin acentos
+	variaciones = append(variaciones, variacionesSinAcentos...)
+	
+	// ========================================================================
+	// === PARA AGREGAR MÁS CASOS, COPIA ESTE TEMPLATE: ===
+	// ========================================================================
+	/*
+	// === CASO X: Descripción de la transformación ===
+	// Entrada:  "América, Buenos Aires, Argentina"
+	// Salida:   "TU_TRANSFORMACION_AQUI"
+	// Razón:    Por qué este caso es útil
+	if CONDICION {
+		variacionX := TU_LOGICA_AQUI
+		if variacionX != direccion {  // Evitar duplicados
+			variaciones = append(variaciones, variacionX)
+		}
+	}
+	*/
+	
+	return variaciones
+}
+
+// removerAcentos elimina acentos y diacríticos de un string
+// Transforma: "Tucumán" → "Tucuman", "Córdoba" → "Cordoba", etc.
+func removerAcentos(s string) string {
+	// Mapa de caracteres con acento a sin acento
+	replacements := map[rune]rune{
+		'á': 'a', 'Á': 'A',
+		'é': 'e', 'É': 'E',
+		'í': 'i', 'Í': 'I',
+		'ó': 'o', 'Ó': 'O',
+		'ú': 'u', 'Ú': 'U',
+		'ü': 'u', 'Ü': 'U',
+		'ñ': 'n', 'Ñ': 'N',
+	}
+	
+	var result strings.Builder
+	for _, char := range s {
+		if replacement, exists := replacements[char]; exists {
+			result.WriteRune(replacement)
+		} else {
+			result.WriteRune(char)
+		}
+	}
+	
+	return result.String()
+}
+
+// buscarUbicacionExacta busca una ubicación con el texto exacto
+func (s *SupabaseService) buscarUbicacionExacta(direccion string) (string, error) {
 	url := fmt.Sprintf("%s/rest/v1/ubicaciones?direccion=eq.%s&select=id", s.url, direccion)
 	
 	req, err := http.NewRequest("GET", url, nil)
@@ -313,23 +509,47 @@ type Coordenadas struct {
 
 // obtenerCoordenadas obtiene coordenadas usando Google Maps API
 func (s *SupabaseService) obtenerCoordenadas(direccion string) (*Coordenadas, error) {
-	// Usar la misma API key que funciona en el script JS
-	apiKey := getEnvAI("GOOGLE_MAPS_API_KEY", "AIzaSyASe9Id-6Dr6lxr5mCb7O3l2HlmNrY-mRU")
+	// Obtener API key desde configuración del sistema o fallback
+	var apiKey string
+	var keySource string
+	
+	if s.systemConfigManager != nil {
+		apiKey = s.systemConfigManager.GetGoogleMapsAPIKey()
+		keySource = "Base de Datos (system_configs)"
+	} else {
+		apiKey = getEnvAI("GOOGLE_MAPS_API_KEY", "AIzaSyASe9Id-6Dr6lxr5mCb7O3l2HlmNrY-mRU")
+		keySource = "Hardcoded/Env (FALLBACK)"
+	}
+	
+	// Log de diagnóstico para ver qué key se está usando
+	maskedKey := ""
+	if len(apiKey) > 10 {
+		maskedKey = apiKey[:10] + "..." + apiKey[len(apiKey)-4:]
+	} else {
+		maskedKey = "***"
+	}
+	fmt.Printf("🔑 Usando Google Maps API Key desde: %s (%s)\n", keySource, maskedKey)
 	
 	// Limpiar y encodear la dirección correctamente
 	cleanAddress := strings.TrimSpace(direccion)
 	
-	// Crear URL base
+	// Construir URL correctamente usando url.Values para proper encoding de caracteres especiales
 	baseURL := "https://maps.googleapis.com/maps/api/geocode/json"
-	params := fmt.Sprintf("?address=%s&components=country:AR&region=AR&key=%s&language=es",
-		strings.ReplaceAll(cleanAddress, " ", "+"),
-		apiKey)
 	
-	url := baseURL + params
+	// Crear parámetros para la URL
+	params := url.Values{}
+	params.Add("address", cleanAddress)
+	params.Add("components", "country:AR")
+	params.Add("region", "AR")
+	params.Add("key", apiKey)
+	params.Add("language", "es")
+	
+	// Construir URL completa con encoding correcto
+	requestURL := baseURL + "?" + params.Encode()
 	
 	fmt.Printf("🗺️ Geocoding: %s\n", cleanAddress)
 	
-	resp, err := s.client.Get(url)
+	resp, err := s.client.Get(requestURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to call Google Maps API: %v", err)
 	}

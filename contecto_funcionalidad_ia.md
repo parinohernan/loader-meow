@@ -59,7 +59,14 @@ Estos campos pueden omitirse si no hay información:
 - **puntoReferencia**: Punto de referencia adicional
 - **precio**: Precio del viaje (como string)
 - **formaDePago**: Forma de pago
-- **observaciones**: Información adicional
+- **observaciones**: **CAMPO ESPECIAL - Copia EXACTAMENTE el texto original del mensaje del cliente en este campo**
+
+### REGLA IMPORTANTE PARA OBSERVACIONES:
+
+- El campo **"observaciones"** DEBE contener el **texto original completo del mensaje** sin modificaciones
+- NO resumas, NO parafrasees, NO modifiques el texto
+- Simplemente COPIA el mensaje original tal cual lo recibiste
+- Esto preserva toda la información del contexto original
 
 ## VALORES VÁLIDOS
 
@@ -141,11 +148,28 @@ Estos campos pueden omitirse si no hay información:
 - Pallets, tarimas → "Pallet"
 - Si no coincide → "Otros"
 
-### UBICACIONES:
+### UBICACIONES (MUY IMPORTANTE):
 
+- **TODAS las ubicaciones DEBEN terminar con ", Argentina"**
 - SIEMPRE incluir: "Ciudad, Provincia, Argentina"
 - Ejemplos: "Rosario, Santa Fe, Argentina", "Córdoba Capital, Córdoba, Argentina"
 - Si solo dice ciudad, agregar provincia más probable
+
+**REGLAS CRÍTICAS DE UBICACIONES:**
+
+1. **SOLO ARGENTINA:**
+
+   - **NUNCA** uses países como Brasil, Chile, Uruguay, Paraguay, Bolivia, Perú, etc.
+   - **TODAS las ubicaciones DEBEN ser de Argentina**
+   - Si el mensaje menciona un país diferente a Argentina → devuelve **array vacío []**
+   - Ejemplo: Si dice "Río de Janeiro, Brasil" → devuelve **[]** (no procesar)
+
+2. **UBICACIONES VÁLIDAS:**
+   - **NUNCA** uses términos como "Desconocida", "Desconocido", "Sin especificar", "N/A", "No disponible"
+   - **SI NO HAY INFORMACIÓN DE UBICACIÓN VÁLIDA EN EL MENSAJE**, devuelve un **array vacío []**
+   - Es MEJOR devolver [] que inventar ubicaciones falsas
+   - Solo genera una carga si AMBAS ubicaciones (carga Y descarga) están claramente especificadas en el mensaje
+   - **AMBAS ubicaciones DEBEN estar en Argentina**
 
 ### TELÉFONOS:
 
@@ -179,10 +203,12 @@ Respuesta:
     "fechaCarga": "18/12/2024",
     "fechaDescarga": "19/12/2024",
     "telefono": "+5493512345678",
-    "observaciones": "34 rollos de alfalfa, Semi 14.5 o Chasis y acoplado, fajas y lona"
+    "observaciones": "Rollos de Alfalfa Villa del Rosario - Córdoba a Emilia - Santa Fe (Semi 14.5 o Chasis y acoplado 34 rollos) Fajas y lona"
   }
 ]
 ```
+
+**NOTA:** El campo "observaciones" contiene el **mensaje original COMPLETO sin modificar**.
 
 ### Mensaje: "Necesito transportar 20 toneladas de soja desde Rosario hasta Buenos Aires. Fecha: mañana. Teléfono: 93412345678"
 
@@ -200,10 +226,13 @@ Respuesta:
     "localidadDescarga": "Buenos Aires, Buenos Aires, Argentina",
     "fechaCarga": "19/12/2024",
     "fechaDescarga": "20/12/2024",
-    "telefono": "+5493412345678"
+    "telefono": "+5493412345678",
+    "observaciones": "Necesito transportar 20 toneladas de soja desde Rosario hasta Buenos Aires. Fecha: mañana. Teléfono: 93412345678"
   }
 ]
 ```
+
+**NOTA:** El campo "observaciones" contiene el **mensaje original COMPLETO**.
 
 ## VALORES POR DEFECTO
 
@@ -227,6 +256,7 @@ Cuando no hay información específica, usar:
 6. **UBICACIONES COMPLETAS** - Siempre "Ciudad, Provincia, Argentina"
 7. **TELÉFONOS ARGENTINOS** - Formato +549XXXXXXXXX, busca el telefono en el mensaje, solo si no lo encuentras usa el que aparece como ALT
 8. **FECHAS REALISTAS** - Usa fechas lógicas y futuras
+9. **OBSERVACIONES = MENSAJE ORIGINAL** - El campo "observaciones" DEBE contener el texto original COMPLETO del mensaje del cliente, sin resumir ni modificar
 
 ## EJEMPLO DE MÚLTIPLES CARGAS
 
@@ -261,10 +291,40 @@ Si el mensaje contiene múltiples cargas, crear un array con múltiples objetos:
 ]
 ```
 
+### Ejemplo 3: Mensaje SIN información de ubicaciones
+
+**Mensaje:** "Hola, buenos días. Tengo una carga de 15 toneladas para mañana. Me interesa saber el precio."
+
+**Respuesta correcta:** `[]`
+
+**Razón:** El mensaje NO tiene ubicaciones de origen ni destino. NO inventes "Desconocida" ni valores falsos.
+
+### Ejemplo 4: Mensaje conversacional (NO es una carga)
+
+**Mensaje:** "Muchas gracias por la info, después te confirmo"
+
+**Respuesta correcta:** `[]`
+
+**Razón:** Es un mensaje conversacional, no describe una carga de transporte.
+
+### Ejemplo 5: Mensaje con país NO argentino
+
+**Mensaje:** "Necesito transportar 20 toneladas de soja de Rosario, Santa Fe a Río de Janeiro, Brasil. Pago $500,000."
+
+**Respuesta correcta:** `[]`
+
+**Razón:** El destino es **Brasil**, NO Argentina. **SOLO se procesan cargas dentro de Argentina**. Si alguna ubicación está fuera de Argentina, devuelve array vacío.
+
 ## RECUERDA
 
 - Solo responde con JSON válido
 - Usa los valores exactos de las listas
-- Siempre es un array de objetos
+- Siempre es un array de objetos (o array vacío [])
 - Incluye todos los campos obligatorios
 - Ubicaciones completas con provincia y país
+- **SI NO HAY UBICACIONES VÁLIDAS → devuelve []**
+- **NUNCA uses "Desconocida", "Unknown" o similares en ubicaciones**
+- **TODAS las ubicaciones DEBEN terminar con ", Argentina"**
+- **SI el mensaje menciona Brasil, Chile, Uruguay u otro país → devuelve []**
+- **SOLO procesamos transporte dentro de Argentina**
+- **El campo "observaciones" SIEMPRE debe contener el mensaje original COMPLETO del cliente**
