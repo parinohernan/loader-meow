@@ -26,46 +26,20 @@ func NewAIProviderService(configManager *AIConfigManager) *AIProviderService {
 	}
 }
 
-// ProcessMessage procesa un mensaje usando el proveedor activo
+// ProcessMessage procesa un mensaje usando el proveedor activo (sin reintentos automáticos)
 func (s *AIProviderService) ProcessMessage(systemPrompt, userMessage, realPhone string) ([]byte, error) {
-	return s.processMessageWithRetry(systemPrompt, userMessage, realPhone, 0, make(map[int]bool))
-}
-
-// processMessageWithRetry procesa un mensaje con reintentos automáticos
-func (s *AIProviderService) processMessageWithRetry(systemPrompt, userMessage, realPhone string, retryCount int, triedConfigs map[int]bool) ([]byte, error) {
-	// Límite de reintentos: 2 rotaciones (3 intentos totales: 1 inicial + 2 rotaciones)
-	// Esto evita consumir muchos tokens cuando todas las keys tienen límite diario
-	const MAX_RETRIES = 2
 	
-	if retryCount >= MAX_RETRIES {
-		fmt.Printf("⛔ LÍMITE DE REINTENTOS ALCANZADO (%d intentos totales)\n", retryCount+1)
-		return nil, fmt.Errorf("alcanzado límite de reintentos (%d rotaciones). Detén el procesamiento y espera a que se restablezcan las quotas", MAX_RETRIES)
-	}
-	
-	// Obtener configuración activa
+	// Obtener configuración activa desde caché (optimizado para concurrencia)
 	config, err := s.configManager.GetActiveConfig()
 	if err != nil {
 		return nil, fmt.Errorf("no active AI configuration: %v", err)
 	}
 	
-	// Verificar si ya intentamos con esta configuración (evitar bucles)
-	if triedConfigs[config.ID] {
-		fmt.Printf("⚠️ Configuración %s ya fue intentada, buscando otra...\n", config.Name)
-		newConfig, rotateErr := s.configManager.RotateToNextConfig()
-		if rotateErr != nil || newConfig.ID == config.ID {
-			return nil, fmt.Errorf("no hay más configuraciones disponibles para intentar")
-		}
-		config = newConfig
+	if config == nil {
+		return nil, fmt.Errorf("no hay configuración de IA activa. Ve a '⚙️ Configuración IA' y activa una")
 	}
 	
-	// Marcar esta configuración como intentada
-	triedConfigs[config.ID] = true
-	
-	if retryCount > 0 {
-		fmt.Printf("🔄 Reintento #%d/%d con: %s - %s (%s)\n", retryCount, MAX_RETRIES, config.ProviderDisplay, config.ModelDisplay, config.Name)
-	} else {
-		fmt.Printf("🤖 Intento 1/%d - Usando: %s - %s (%s)\n", MAX_RETRIES+1, config.ProviderDisplay, config.ModelDisplay, config.Name)
-	}
+	fmt.Printf("🤖 Usando: %s - %s (%s)\n", config.ProviderDisplay, config.ModelDisplay, config.Name)
 	
 	// Llamar al proveedor correspondiente
 	var response []byte
@@ -88,36 +62,15 @@ func (s *AIProviderService) processMessageWithRetry(systemPrompt, userMessage, r
 		// Reportar error
 		s.configManager.ReportError(config.ID, err.Error())
 		
-		// Si es error de rate limit (429, 503), intentar rotar y reintentar
+		// Si es error de rate limit (429, 503), detener y pedir cambio manual
 		if isRateLimitError(err) {
-			fmt.Printf("⚠️ Rate limit detectado (429/503) en %s - %s (%s)\n", config.ProviderDisplay, config.ModelDisplay, config.Name)
-			fmt.Printf("🔄 Intentando rotar a otra configuración disponible...\n")
+			fmt.Printf("⚠️ RATE LIMIT DETECTADO (429/503) en %s - %s (%s)\n", config.ProviderDisplay, config.ModelDisplay, config.Name)
+			fmt.Printf("🛑 PROCESAMIENTO DETENIDO - Rate limit alcanzado\n")
+			fmt.Printf("💡 SOLUCIÓN: Ve a '⚙️ Configuración IA' y activa otra API key manualmente\n")
+			fmt.Printf("📋 Sugerencia: Activa una key de otro proveedor (Groq, Gemini, etc.)\n")
 			
-			newConfig, rotateErr := s.configManager.RotateToNextConfig()
-			if rotateErr != nil {
-				fmt.Printf("❌ No se pudo rotar: %v\n", rotateErr)
-				fmt.Printf("❌ FINALIZANDO - No hay más configuraciones para intentar\n")
-				return nil, fmt.Errorf("rate limit alcanzado y no hay más configuraciones: %v", err)
-			}
-			
-			if newConfig.ID == config.ID {
-				fmt.Printf("❌ No hay otras configuraciones disponibles (solo hay 1 configuración)\n")
-				fmt.Printf("❌ FINALIZANDO - Solo hay 1 configuración y tiene rate limit\n")
-				return nil, fmt.Errorf("rate limit alcanzado en única configuración disponible: %v", err)
-			}
-			
-			// Verificar si ya intentamos con esta config (evitar bucle)
-			if triedConfigs[newConfig.ID] {
-				fmt.Printf("❌ Ya se intentó con configuración ID=%d\n", newConfig.ID)
-				fmt.Printf("❌ FINALIZANDO - Todas las configuraciones disponibles (%d) ya fueron intentadas\n", len(triedConfigs))
-				return nil, fmt.Errorf("todas las configuraciones probadas tienen rate limit de tokens (%d keys intentadas). Espera a que se restablezcan las quotas diarias", len(triedConfigs))
-			}
-			
-			fmt.Printf("✅ Rotado exitosamente a: %s - %s (%s)\n", newConfig.ProviderDisplay, newConfig.ModelDisplay, newConfig.Name)
-			fmt.Printf("🔁 Reintentando mensaje con nueva configuración...\n")
-			
-			// Reintentar con la nueva configuración
-			return s.processMessageWithRetry(systemPrompt, userMessage, realPhone, retryCount+1, triedConfigs)
+			return nil, fmt.Errorf("rate limit alcanzado en %s - %s (%s). Ve a Configuración IA y activa otra key manualmente", 
+				config.ProviderDisplay, config.ModelDisplay, config.Name)
 		}
 		
 		// Si es otro tipo de error, no reintentar
@@ -127,21 +80,21 @@ func (s *AIProviderService) processMessageWithRetry(systemPrompt, userMessage, r
 	
 	// Reportar éxito
 	s.configManager.ReportSuccess(config.ID)
-	
-	if retryCount > 0 {
-		fmt.Printf("✅ Reintento exitoso después de %d intentos\n", retryCount)
-	} else {
-		fmt.Printf("✅ Procesamiento exitoso con %s - %s (%s)\n", config.ProviderDisplay, config.ModelDisplay, config.Name)
-	}
+	fmt.Printf("✅ Procesamiento exitoso con %s - %s (%s)\n", config.ProviderDisplay, config.ModelDisplay, config.Name)
 	
 	return response, nil
 }
 
 // callGemini llama a la API de Gemini
 func (s *AIProviderService) callGemini(config *AIConfigDB, systemPrompt, userMessage, realPhone string) ([]byte, error) {
-	// Construir el prompt completo
-	fullPrompt := fmt.Sprintf("%s\n\n## Información del Cliente\n- Teléfono: %s\n\n## Mensaje del Cliente\n%s",
-		systemPrompt, realPhone, userMessage)
+	// Obtener fecha actual en zona horaria argentina (UTC-3)
+	argLocation, _ := time.LoadLocation("America/Argentina/Buenos_Aires")
+	currentDate := time.Now().In(argLocation).Format("02/01/2006") // DD/MM/YYYY
+	currentDateTime := time.Now().In(argLocation).Format("02/01/2006 15:04") // DD/MM/YYYY HH:MM
+	
+	// Construir el prompt completo con fecha actual
+	fullPrompt := fmt.Sprintf("%s\n\n## FECHA Y HORA ACTUAL (Argentina)\n- Hoy es: %s\n- Fecha y hora actual: %s\n- Zona horaria: Argentina (UTC-3)\n- IMPORTANTE: Usa esta fecha como referencia para \"hoy\", \"mañana\", etc.\n\n## Información del Cliente\n- Teléfono: %s\n\n## Mensaje del Cliente\n%s",
+		systemPrompt, currentDate, currentDateTime, realPhone, userMessage)
 	
 	// Construir request
 	request := map[string]interface{}{
@@ -218,6 +171,11 @@ func (s *AIProviderService) callGemini(config *AIConfigDB, systemPrompt, userMes
 
 // callGroq llama a la API de Groq
 func (s *AIProviderService) callGroq(config *AIConfigDB, systemPrompt, userMessage, realPhone string) ([]byte, error) {
+	// Obtener fecha actual en zona horaria argentina (UTC-3)
+	argLocation, _ := time.LoadLocation("America/Argentina/Buenos_Aires")
+	currentDate := time.Now().In(argLocation).Format("02/01/2006") // DD/MM/YYYY
+	currentDateTime := time.Now().In(argLocation).Format("02/01/2006 15:04") // DD/MM/YYYY HH:MM
+	
 	// Groq usa formato compatible con OpenAI
 	request := map[string]interface{}{
 		"model": config.ModelName,
@@ -228,7 +186,7 @@ func (s *AIProviderService) callGroq(config *AIConfigDB, systemPrompt, userMessa
 			},
 			{
 				"role": "user",
-				"content": fmt.Sprintf("Teléfono del cliente: %s\n\n%s", realPhone, userMessage),
+				"content": fmt.Sprintf("FECHA Y HORA ACTUAL (Argentina):\n- Hoy es: %s\n- Fecha y hora actual: %s\n- Zona horaria: Argentina (UTC-3)\n- IMPORTANTE: Usa esta fecha como referencia para \"hoy\", \"mañana\", etc.\n\nTeléfono del cliente: %s\n\n%s", currentDate, currentDateTime, realPhone, userMessage),
 			},
 		},
 		"temperature": 0.7,
@@ -303,6 +261,11 @@ func (s *AIProviderService) callGroq(config *AIConfigDB, systemPrompt, userMessa
 
 // callDeepSeek llama a la API de DeepSeek
 func (s *AIProviderService) callDeepSeek(config *AIConfigDB, systemPrompt, userMessage, realPhone string) ([]byte, error) {
+	// Obtener fecha actual en zona horaria argentina (UTC-3)
+	argLocation, _ := time.LoadLocation("America/Argentina/Buenos_Aires")
+	currentDate := time.Now().In(argLocation).Format("02/01/2006") // DD/MM/YYYY
+	currentDateTime := time.Now().In(argLocation).Format("02/01/2006 15:04") // DD/MM/YYYY HH:MM
+	
 	// DeepSeek usa formato compatible con OpenAI
 	request := map[string]interface{}{
 		"model": config.ModelName,
@@ -313,7 +276,7 @@ func (s *AIProviderService) callDeepSeek(config *AIConfigDB, systemPrompt, userM
 			},
 			{
 				"role": "user",
-				"content": fmt.Sprintf("Teléfono del cliente: %s\n\n%s", realPhone, userMessage),
+				"content": fmt.Sprintf("FECHA Y HORA ACTUAL (Argentina):\n- Hoy es: %s\n- Fecha y hora actual: %s\n- Zona horaria: Argentina (UTC-3)\n- IMPORTANTE: Usa esta fecha como referencia para \"hoy\", \"mañana\", etc.\n\nTeléfono del cliente: %s\n\n%s", currentDate, currentDateTime, realPhone, userMessage),
 			},
 		},
 		"temperature": 0.7,
@@ -392,6 +355,11 @@ func (s *AIProviderService) callDeepSeek(config *AIConfigDB, systemPrompt, userM
 
 // callGrok llama a la API de Grok (xAI)
 func (s *AIProviderService) callGrok(config *AIConfigDB, systemPrompt, userMessage, realPhone string) ([]byte, error) {
+	// Obtener fecha actual en zona horaria argentina (UTC-3)
+	argLocation, _ := time.LoadLocation("America/Argentina/Buenos_Aires")
+	currentDate := time.Now().In(argLocation).Format("02/01/2006") // DD/MM/YYYY
+	currentDateTime := time.Now().In(argLocation).Format("02/01/2006 15:04") // DD/MM/YYYY HH:MM
+	
 	// Grok usa formato compatible con OpenAI
 	request := map[string]interface{}{
 		"model": config.ModelName,
@@ -402,7 +370,7 @@ func (s *AIProviderService) callGrok(config *AIConfigDB, systemPrompt, userMessa
 			},
 			{
 				"role": "user",
-				"content": fmt.Sprintf("Teléfono del cliente: %s\n\n%s", realPhone, userMessage),
+				"content": fmt.Sprintf("FECHA Y HORA ACTUAL (Argentina):\n- Hoy es: %s\n- Fecha y hora actual: %s\n- Zona horaria: Argentina (UTC-3)\n- IMPORTANTE: Usa esta fecha como referencia para \"hoy\", \"mañana\", etc.\n\nTeléfono del cliente: %s\n\n%s", currentDate, currentDateTime, realPhone, userMessage),
 			},
 		},
 		"temperature": 0.7,
@@ -480,6 +448,11 @@ func (s *AIProviderService) callGrok(config *AIConfigDB, systemPrompt, userMessa
 
 // callQwen llama a la API de Qwen (Alibaba)
 func (s *AIProviderService) callQwen(config *AIConfigDB, systemPrompt, userMessage, realPhone string) ([]byte, error) {
+	// Obtener fecha actual en zona horaria argentina (UTC-3)
+	argLocation, _ := time.LoadLocation("America/Argentina/Buenos_Aires")
+	currentDate := time.Now().In(argLocation).Format("02/01/2006") // DD/MM/YYYY
+	currentDateTime := time.Now().In(argLocation).Format("02/01/2006 15:04") // DD/MM/YYYY HH:MM
+	
 	// Qwen usa formato similar a OpenAI
 	request := map[string]interface{}{
 		"model": config.ModelName,
@@ -491,7 +464,7 @@ func (s *AIProviderService) callQwen(config *AIConfigDB, systemPrompt, userMessa
 				},
 				{
 					"role": "user",
-					"content": fmt.Sprintf("Teléfono: %s\n\n%s", realPhone, userMessage),
+					"content": fmt.Sprintf("FECHA Y HORA ACTUAL (Argentina):\n- Hoy es: %s\n- Fecha y hora actual: %s\n- Zona horaria: Argentina (UTC-3)\n- IMPORTANTE: Usa esta fecha como referencia para \"hoy\", \"mañana\", etc.\n\nTeléfono: %s\n\n%s", currentDate, currentDateTime, realPhone, userMessage),
 				},
 			},
 		},
@@ -603,10 +576,55 @@ func isRateLimitError(err error) bool {
 	return false
 }
 
+// CleanMarkdownCodeBlocks limpia bloques de código markdown de la respuesta
+// Algunos modelos (DeepSeek, Gemini) devuelven JSON envuelto en ```json ... ```
+func (s *AIProviderService) CleanMarkdownCodeBlocks(response []byte) []byte {
+	text := string(response)
+	
+	// Eliminar bloques de código markdown: ```json ... ``` o ``` ... ```
+	text = strings.TrimSpace(text)
+	
+	// Patrón 1: ```json\n{...}\n```
+	if strings.HasPrefix(text, "```json") && strings.HasSuffix(text, "```") {
+		text = strings.TrimPrefix(text, "```json")
+		text = strings.TrimSuffix(text, "```")
+		text = strings.TrimSpace(text)
+		fmt.Printf("🧹 Limpiando markdown: ```json detectado\n")
+	}
+	
+	// Patrón 2: ```\n{...}\n```
+	if strings.HasPrefix(text, "```") && strings.HasSuffix(text, "```") {
+		text = strings.TrimPrefix(text, "```")
+		text = strings.TrimSuffix(text, "```")
+		text = strings.TrimSpace(text)
+		fmt.Printf("🧹 Limpiando markdown: ``` detectado\n")
+	}
+	
+	// Patrón 3: Remover lenguaje específico después de ```
+	// Ejemplo: ```javascript, ```typescript, etc.
+	lines := strings.Split(text, "\n")
+	if len(lines) > 0 && strings.HasPrefix(lines[0], "```") {
+		lines = lines[1:]
+		text = strings.Join(lines, "\n")
+		fmt.Printf("🧹 Limpiando markdown: primera línea con ``` detectada\n")
+	}
+	
+	return []byte(strings.TrimSpace(text))
+}
+
 // ValidateResponse valida que la respuesta sea JSON válido
 func (s *AIProviderService) ValidateResponse(response []byte) error {
+	// Limpiar bloques de código markdown antes de parsear
+	cleanResponse := s.CleanMarkdownCodeBlocks(response)
+	
 	var data interface{}
-	if err := json.Unmarshal(response, &data); err != nil {
+	if err := json.Unmarshal(cleanResponse, &data); err != nil {
+		// Mostrar los primeros 200 caracteres para debug
+		preview := string(cleanResponse)
+		if len(preview) > 200 {
+			preview = preview[:200] + "..."
+		}
+		fmt.Printf("❌ Error parseando JSON. Primeros caracteres: %s\n", preview)
 		return fmt.Errorf("invalid JSON response: %v", err)
 	}
 	
@@ -625,14 +643,17 @@ func (s *AIProviderService) ValidateResponse(response []byte) error {
 
 // NormalizeResponse convierte respuestas de objeto único en array
 func (s *AIProviderService) NormalizeResponse(response []byte) ([]byte, error) {
+	// Limpiar bloques de código markdown antes de parsear
+	cleanResponse := s.CleanMarkdownCodeBlocks(response)
+	
 	var data interface{}
-	if err := json.Unmarshal(response, &data); err != nil {
-		return response, err
+	if err := json.Unmarshal(cleanResponse, &data); err != nil {
+		return cleanResponse, err
 	}
 	
 	// Si ya es un array, devolverlo tal cual
 	if _, ok := data.([]interface{}); ok {
-		return response, nil
+		return cleanResponse, nil
 	}
 	
 	// Si es un objeto, convertirlo en array
@@ -640,12 +661,12 @@ func (s *AIProviderService) NormalizeResponse(response []byte) ([]byte, error) {
 		arrayData := []interface{}{obj}
 		normalized, err := json.Marshal(arrayData)
 		if err != nil {
-			return response, err
+			return cleanResponse, err
 		}
 		fmt.Printf("🔄 Respuesta normalizada: objeto convertido a array\n")
 		return normalized, nil
 	}
 	
-	return response, nil
+	return cleanResponse, nil
 }
 
