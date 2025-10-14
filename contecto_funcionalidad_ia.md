@@ -164,6 +164,12 @@ Estos campos pueden omitirse si no hay información:
    - Si el mensaje menciona un país diferente a Argentina → devuelve **array vacío []**
    - Ejemplo: Si dice "Río de Janeiro, Brasil" → devuelve **[]** (no procesar)
 
+   **IMPORTANTE - CIUDADES ARGENTINAS CON NOMBRES ESPECIALES:**
+
+   - **"Concepción del Uruguay"** es una ciudad de Entre Ríos, Argentina (NO es el país Uruguay)
+   - Formato correcto: "Concepción del Uruguay, Entre Ríos, Argentina"
+   - Esta ciudad es válida y DEBE ser procesada normalmente
+
 2. **UBICACIONES VÁLIDAS:**
    - **NUNCA** uses términos como "Desconocida", "Desconocido", "Sin especificar", "N/A", "No disponible"
    - **SI NO HAY INFORMACIÓN DE UBICACIÓN VÁLIDA EN EL MENSAJE**, devuelve un **array vacío []**

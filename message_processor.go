@@ -350,6 +350,28 @@ func (p *MessageProcessor) GetProcessingStats() (map[string]interface{}, error) 
 	stats["success_count"] = statusCounts["success"]
 	stats["error_count"] = statusCounts["error"]
 	
+	// Contar total de cargas subidas hoy
+	cargasQuery := `
+		SELECT SUM(JSON_LENGTH(supabase_ids)) as total_cargas
+		FROM ai_processing_results
+		WHERE DATE(processed_at) = CURDATE()
+		AND status = 'success'
+		AND supabase_ids IS NOT NULL
+		AND supabase_ids != '[]'
+	`
+	
+	var totalCargas sql.NullInt64
+	err = p.messageStore.db.QueryRow(cargasQuery).Scan(&totalCargas)
+	if err != nil && err != sql.ErrNoRows {
+		return nil, err
+	}
+	
+	if totalCargas.Valid {
+		stats["total_cargas"] = int(totalCargas.Int64)
+	} else {
+		stats["total_cargas"] = 0
+	}
+	
 	return stats, nil
 }
 
@@ -360,26 +382,18 @@ func (p *MessageProcessor) GetProcessableMessagesCount() (int, error) {
 
 // ProcessSingleMessage procesa un solo mensaje por ID
 func (p *MessageProcessor) ProcessSingleMessage(messageID, chatJID string) (ProcessingResult, error) {
-	// Obtener el mensaje específico
-	messages, err := p.messageStore.GetProcessableMessages(1000)
+	// Buscar el mensaje directamente por ID, sin importar su estado
+	// Esto permite reprocesar mensajes ya procesados o con errores
+	targetMessage, err := p.messageStore.GetMessageByID(messageID, chatJID)
 	if err != nil {
-		return ProcessingResult{}, fmt.Errorf("failed to get messages: %v", err)
-	}
-	
-	// Buscar el mensaje específico
-	var targetMessage *ProcessableMessage
-	for _, msg := range messages {
-		if msg.ID == messageID && msg.ChatJID == chatJID {
-			targetMessage = &msg
-			break
-		}
+		return ProcessingResult{}, fmt.Errorf("failed to get message: %v", err)
 	}
 	
 	if targetMessage == nil {
-		return ProcessingResult{}, fmt.Errorf("message not found or not processable")
+		return ProcessingResult{}, fmt.Errorf("message not found")
 	}
 	
-	p.logger.Infof("Procesando mensaje individual: %s", messageID)
+	p.logger.Infof("Procesando mensaje individual: %s (permitir reprocesar)", messageID)
 	
 	// Procesar el mensaje
 	result := p.processMessage(*targetMessage)
@@ -424,6 +438,13 @@ func (p *MessageProcessor) validateLocations(jsonData []byte) error {
 		"sin datos",
 	}
 	
+	// Ciudades argentinas que contienen nombres de países en su nombre (excepciones)
+	argentineCitiesWithCountryNames := []string{
+		"concepción del uruguay",  // Entre Ríos, Argentina
+		"concepcion del uruguay",
+		// Agregar más excepciones aquí si es necesario
+	}
+	
 	// Países NO permitidos (solo Argentina está permitida)
 	forbiddenCountries := []string{
 		"brasil", "brazil",
@@ -452,10 +473,21 @@ func (p *MessageProcessor) validateLocations(jsonData []byte) error {
 			return fmt.Errorf("carga %d: localidadCarga '%s' no contiene 'Argentina' - solo se procesan ubicaciones argentinas", i+1, localidadCarga)
 		}
 		
-		// Verificar que NO contenga países prohibidos
-		for _, country := range forbiddenCountries {
-			if strings.Contains(localidadCargaLower, country) {
-				return fmt.Errorf("carga %d: localidadCarga contiene '%s' - solo se procesan ubicaciones de Argentina", i+1, country)
+		// Verificar si es una ciudad argentina con nombre de país (excepción)
+		isException := false
+		for _, cityException := range argentineCitiesWithCountryNames {
+			if strings.Contains(localidadCargaLower, cityException) {
+				isException = true
+				break
+			}
+		}
+		
+		// Verificar que NO contenga países prohibidos (solo si no es excepción)
+		if !isException {
+			for _, country := range forbiddenCountries {
+				if strings.Contains(localidadCargaLower, country) {
+					return fmt.Errorf("carga %d: localidadCarga contiene '%s' - solo se procesan ubicaciones de Argentina", i+1, country)
+				}
 			}
 		}
 		
@@ -479,10 +511,21 @@ func (p *MessageProcessor) validateLocations(jsonData []byte) error {
 			return fmt.Errorf("carga %d: localidadDescarga '%s' no contiene 'Argentina' - solo se procesan ubicaciones argentinas", i+1, localidadDescarga)
 		}
 		
-		// Verificar que NO contenga países prohibidos
-		for _, country := range forbiddenCountries {
-			if strings.Contains(localidadDescargaLower, country) {
-				return fmt.Errorf("carga %d: localidadDescarga contiene '%s' - solo se procesan ubicaciones de Argentina", i+1, country)
+		// Verificar si es una ciudad argentina con nombre de país (excepción)
+		isExceptionDescarga := false
+		for _, cityException := range argentineCitiesWithCountryNames {
+			if strings.Contains(localidadDescargaLower, cityException) {
+				isExceptionDescarga = true
+				break
+			}
+		}
+		
+		// Verificar que NO contenga países prohibidos (solo si no es excepción)
+		if !isExceptionDescarga {
+			for _, country := range forbiddenCountries {
+				if strings.Contains(localidadDescargaLower, country) {
+					return fmt.Errorf("carga %d: localidadDescarga contiene '%s' - solo se procesan ubicaciones de Argentina", i+1, country)
+				}
 			}
 		}
 		

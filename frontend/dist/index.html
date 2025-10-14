@@ -563,6 +563,29 @@
         cursor: not-allowed;
       }
 
+      /* Botón procesar 10 */
+      .process-batch-btn {
+        background: #4CAF50;
+        color: white;
+        padding: 15px 20px;
+        border: none;
+        border-radius: 8px;
+        font-size: 16px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background-color 0.2s;
+      }
+
+      .process-batch-btn:hover {
+        background: #45a049;
+      }
+
+      .process-batch-btn:disabled {
+        background: #555;
+        color: #999;
+        cursor: not-allowed;
+      }
+
       /* Botón procesar todos */
       .process-all-btn {
         background: #ffc107;
@@ -2276,6 +2299,10 @@
               <span class="switch-label">🤖 Modo Automático</span>
             </label>
             
+            <button class="process-batch-btn" id="processBatchBtn" onclick="processBatchMessages(6)" title="Procesar las 6 cargas más antiguas en paralelo">
+              📦 Procesar 6
+            </button>
+            
             <button class="process-all-btn" id="processAllBtn" onclick="processAllMessages()">
               ⚡ Procesar Todos
             </button>
@@ -2487,6 +2514,9 @@
       let isProcessing = false; // Control de procesamiento único
       let autoProcessInterval = null; // Intervalo para modo automático
       let isAutoModeActive = false; // Estado del modo automático
+      
+      // Set para rastrear mensajes en procesamiento (permite concurrencia/paralelismo)
+      const processingMessages = new Set();
       
       // Variables para configuración IA
       let providersData = [];
@@ -3233,7 +3263,12 @@
           const pendingMessages = await window.go.main.App.GetUnprocessedMessagesWithRealPhone(100);
           
           document.getElementById('pendingCount').textContent = pendingMessages.length;
-          document.getElementById('processedCount').textContent = stats.success_count || 0;
+          
+          // Mostrar mensajes procesados con cantidad de cargas entre paréntesis
+          const processedCount = stats.success_count || 0;
+          const totalCargas = stats.total_cargas || 0;
+          document.getElementById('processedCount').textContent = `${processedCount} (${totalCargas} carga${totalCargas !== 1 ? 's' : ''})`;
+          
           document.getElementById('errorCount').textContent = stats.error_count || 0;
         } catch (error) {
           console.error('Error actualizando estadísticas:', error);
@@ -3332,17 +3367,31 @@
       }
 
       // Procesar un solo mensaje
-      async function processSingleMessage(messageID, chatJID) {
+      async function processSingleMessage(messageID, chatJID, allowConcurrent = false) {
         console.log(`🔵 processSingleMessage llamado con: ${messageID}, ${chatJID}`);
         
-        // Prevenir múltiples procesamientos simultáneos
-        if (isProcessing) {
+        // Si NO es modo concurrente, usar el bloqueo global (clicks manuales)
+        if (!allowConcurrent && isProcessing) {
           showNotification('⏳ Ya hay un mensaje procesándose. Por favor espera...', 'warning');
           return;
         }
         
-        isProcessing = true;
+        // Verificar si este mensaje específico ya está en procesamiento
+        if (processingMessages.has(messageID)) {
+          console.log(`⏭️ Mensaje ${messageID} ya está en procesamiento, saltando...`);
+          return;
+        }
+        
+        // Marcar este mensaje como "en procesamiento"
+        processingMessages.add(messageID);
+        
+        // Si no es modo concurrente, marcar el flag global
+        if (!allowConcurrent) {
+          isProcessing = true;
+        }
+        
         console.log(`🚀 Iniciando procesamiento de mensaje: ${messageID}`);
+        console.log(`⚙️ Modo: ${allowConcurrent ? 'Concurrente (paralelo)' : 'Secuencial (manual)'}`);
         
         // Deshabilitar todos los botones de procesar
         document.querySelectorAll('.btn-action').forEach(b => {
@@ -3353,8 +3402,10 @@
           }
         });
         
-        // Deshabilitar también el botón de procesar todos
+        // Deshabilitar también los botones de procesamiento masivo
+        const processBatchBtn = document.getElementById('processBatchBtn');
         const processAllBtn = document.querySelector('.process-all-btn');
+        if (processBatchBtn) processBatchBtn.disabled = true;
         if (processAllBtn) processAllBtn.disabled = true;
         
         try {
@@ -3385,14 +3436,24 @@
             
             // Mensajes más amigables para errores comunes
             let errorMsg = result.error_message;
-            if (errorMsg.includes('rate limit') || errorMsg.includes('quota')) {
-              errorMsg = '⏳ Límite de tokens alcanzado. Espera a que se restablezcan las quotas o agrega más API keys.';
-            } else if (errorMsg.includes('todas las configuraciones')) {
-              errorMsg = '🔑 Todas las API keys probadas tienen límite de tokens. Agrega más keys o espera.';
+            if (errorMsg.includes('rate limit') || errorMsg.includes('Rate limit') || errorMsg.includes('quota')) {
+              // Extraer nombre del proveedor si está en el mensaje
+              const match = errorMsg.match(/en ([^-]+) -/);
+              const provider = match ? match[1].trim() : 'la API actual';
+              
+              errorMsg = `🛑 Rate Limit alcanzado en ${provider}.\n\n` +
+                        `💡 SOLUCIÓN:\n` +
+                        `1. Ve a "⚙️ Configuración IA"\n` +
+                        `2. Activa otra API key (preferiblemente de otro proveedor)\n` +
+                        `3. Vuelve a procesar los mensajes`;
             } else if (errorMsg.includes('402') || errorMsg.includes('Insufficient Balance')) {
-              errorMsg = '💳 Saldo insuficiente en la cuenta de la API. Recarga créditos en el panel del proveedor.';
+              errorMsg = '💳 Saldo insuficiente. Ve a "⚙️ Configuración IA" y activa otra key, o recarga créditos.';
             } else if (errorMsg.includes('401') || errorMsg.includes('Invalid API key')) {
-              errorMsg = '🔑 API key inválida. Verifica que la key sea correcta.';
+              errorMsg = '🔑 API key inválida. Ve a "⚙️ Configuración IA" y verifica la key o activa otra.';
+            } else if (errorMsg.includes('message not found')) {
+              errorMsg = '❌ Mensaje no encontrado o sin asociación de teléfono. Verifica en "🔗 Asociaciones".';
+            } else if (errorMsg.includes('no active AI configuration') || errorMsg.includes('no hay configuración')) {
+              errorMsg = '⚙️ No hay configuración de IA activa. Ve a "⚙️ Configuración IA" y activa una.';
             }
             
             showNotification(`❌ ${errorMsg}`, "error");
@@ -3410,14 +3471,26 @@
             b.disabled = false;
           });
           
-          // Rehabilitar botón de procesar todos (solo si no está en modo automático)
+          // Rehabilitar botones de procesamiento masivo (solo si no está en modo automático)
+          const processBatchBtn = document.getElementById('processBatchBtn');
           const processAllBtn = document.querySelector('.process-all-btn');
+          
+          if (processBatchBtn && !isAutoModeActive) {
+            processBatchBtn.disabled = false;
+          }
           if (processAllBtn && !isAutoModeActive) {
             processAllBtn.disabled = false;
           }
           
-          isProcessing = false;
-          console.log('🟢 Estado isProcessing limpiado');
+          // Limpiar flags de procesamiento
+          if (!allowConcurrent) {
+            isProcessing = false;
+            console.log('🟢 Estado isProcessing limpiado');
+          }
+          
+          // Siempre remover este mensaje del set de procesamiento
+          processingMessages.delete(messageID);
+          console.log(`🗑️ Mensaje ${messageID} removido del set de procesamiento (${processingMessages.size} restantes)`);
           
           // Refrescar la vista actual (siempre, incluso con errores)
           console.log('🔄 Refrescando vista actual...');
@@ -3452,10 +3525,17 @@
         
         if (isAutoModeActive) {
           console.log('🤖 Modo automático ACTIVADO');
-          showNotification('🤖 Modo automático activado. Procesará 3 mensajes cada minuto', 'success');
+          showNotification('⚡ Modo automático activado (procesamiento paralelo). Hasta 9 mensajes/minuto', 'success');
           
-          // Deshabilitar botón de procesar todos
+          // Deshabilitar botones de procesamiento manual
+          const processBatchBtn = document.getElementById('processBatchBtn');
           const processAllBtn = document.querySelector('.process-all-btn');
+          
+          if (processBatchBtn) {
+            processBatchBtn.disabled = true;
+            processBatchBtn.title = 'Desactiva el modo automático para usar esta opción';
+          }
+          
           if (processAllBtn) {
             processAllBtn.disabled = true;
             processAllBtn.title = 'Desactiva el modo automático para usar esta opción';
@@ -3487,8 +3567,15 @@
             autoProcessInterval = null;
           }
           
-          // Rehabilitar botón de procesar todos
+          // Rehabilitar botones de procesamiento manual
+          const processBatchBtn = document.getElementById('processBatchBtn');
           const processAllBtn = document.querySelector('.process-all-btn');
+          
+          if (processBatchBtn) {
+            processBatchBtn.disabled = false;
+            processBatchBtn.title = 'Procesar las 6 cargas más antiguas en paralelo';
+          }
+          
           if (processAllBtn) {
             processAllBtn.disabled = false;
             processAllBtn.title = 'Procesar todos los mensajes en cola';
@@ -3504,14 +3591,9 @@
         }
       }
 
-      // Procesar el siguiente mensaje disponible (para modo automático)
+      // Procesar el siguiente mensaje disponible (para modo automático con procesamiento paralelo)
       async function processNextMessage() {
-        if (isProcessing) {
-          console.log('⏭️ Ya hay un mensaje procesándose, esperando...');
-          return;
-        }
-        
-        console.log('🔄 [Modo Automático] Verificando mensajes pendientes...');
+        console.log('🔄 [Modo Automático - Paralelo] Verificando mensajes pendientes...');
         
         try {
           // Obtener todos los mensajes sin procesar
@@ -3522,49 +3604,221 @@
             return;
           }
           
-          // LÍMITE: Procesar máximo 3 mensajes por minuto (respeta rate limits)
-          const MAX_MESSAGES_PER_MINUTE = 3;
-          const PAUSE_SECONDS = 20; // 60 segundos / 3 mensajes = 20 segundos por mensaje
+          // PROCESAMIENTO PARALELO - Configuración
+          // Puedes ajustar estos valores según tus necesidades y límites de API:
+          // 
+          // CONCURRENT_BATCH: Cuántos mensajes procesar SIMULTÁNEAMENTE (en paralelo)
+          // - Conservador: 2 (más seguro, ~240 msg/hora)
+          // - Moderado: 3 (recomendado, ~360-540 msg/hora) ← ACTUAL
+          // - Rápido: 5 (arriesgado, ~600-900 msg/hora)
+          // - Muy rápido: 10 (alto riesgo rate limit, ~1200+ msg/hora)
+          //
+          // MAX_MESSAGES_PER_CYCLE: Total de mensajes a procesar por ciclo (1 minuto)
+          const CONCURRENT_BATCH = 3;         // Procesar 3 mensajes en paralelo
+          const MAX_MESSAGES_PER_CYCLE = 9;   // Total: 9 mensajes por ciclo (3 lotes de 3)
+          const PAUSE_BETWEEN_BATCHES = 5;    // Pausa de 5s entre lotes paralelos
           
-          const messagesToProcess = Math.min(messages.length, MAX_MESSAGES_PER_MINUTE);
+          const messagesToProcess = Math.min(messages.length, MAX_MESSAGES_PER_CYCLE);
           
           console.log(`🤖 [Modo Automático] Encontrados ${messages.length} mensajes.`);
-          console.log(`⚙️ Procesando ${messagesToProcess} mensajes (máx ${MAX_MESSAGES_PER_MINUTE}/min con pausas de ${PAUSE_SECONDS}s)`);
+          console.log(`⚡ Procesamiento PARALELO: ${CONCURRENT_BATCH} simultáneos, hasta ${messagesToProcess} por ciclo`);
           
-          // Procesar solo los primeros 3 mensajes con pausas de 20 segundos
-          for (let i = 0; i < messagesToProcess; i++) {
+          let processed = 0;
+          let successful = 0;
+          let errors = 0;
+          
+          // Procesar en lotes paralelos
+          for (let i = 0; i < messagesToProcess; i += CONCURRENT_BATCH) {
             // Verificar si el modo automático sigue activo
             if (!isAutoModeActive) {
               console.log('⏸️ Modo automático desactivado, deteniendo procesamiento');
               break;
             }
             
-            const msg = messages[i];
-            console.log(`\n📋 [${i + 1}/${messagesToProcess}] Procesando automáticamente: ${msg.id}`);
+            // Obtener el lote actual (hasta CONCURRENT_BATCH mensajes)
+            const batch = messages.slice(i, Math.min(i + CONCURRENT_BATCH, messagesToProcess));
+            const batchNumber = Math.floor(i / CONCURRENT_BATCH) + 1;
+            const totalBatches = Math.ceil(messagesToProcess / CONCURRENT_BATCH);
             
-            try {
-              await processSingleMessage(msg.id, msg.chat_jid);
+            console.log(`\n🔷 Lote ${batchNumber}/${totalBatches}: Procesando ${batch.length} mensajes EN PARALELO...`);
+            
+            // Procesar todos los mensajes del lote EN PARALELO con Promise.all()
+            const batchPromises = batch.map(async (msg, index) => {
+              const globalIndex = i + index + 1;
+              console.log(`  📋 [${globalIndex}/${messagesToProcess}] Iniciando: ${msg.sender_name || msg.sender_phone}`);
               
-              // Pausa de 20 segundos entre mensajes (3 mensajes/minuto máx)
-              if (i < messagesToProcess - 1 && isAutoModeActive) {
-                console.log(`⏱️ Esperando ${PAUSE_SECONDS} segundos antes del próximo mensaje... (${i + 1}/${messagesToProcess} procesados)`);
-                await new Promise(resolve => setTimeout(resolve, PAUSE_SECONDS * 1000));
+              try {
+                const startTime = Date.now();
+                // Pasar true para permitir procesamiento concurrente/paralelo
+                await processSingleMessage(msg.id, msg.chat_jid, true);
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                
+                console.log(`  ✅ [${globalIndex}/${messagesToProcess}] Completado en ${elapsed}s`);
+                return { success: true, id: msg.id };
+              } catch (error) {
+                console.error(`  ❌ [${globalIndex}/${messagesToProcess}] Error:`, error.message);
+                return { success: false, id: msg.id, error: error.message };
               }
-            } catch (error) {
-              console.error(`❌ Error procesando mensaje ${msg.id}:`, error);
-              // Continuar con el siguiente mensaje aunque haya error
+            });
+            
+            // Esperar a que TODO el lote complete (Promise.all espera a todos)
+            const results = await Promise.all(batchPromises);
+            
+            // Contar resultados del lote
+            results.forEach(result => {
+              processed++;
+              if (result.success) {
+                successful++;
+              } else {
+                errors++;
+              }
+            });
+            
+            console.log(`🔷 Lote ${batchNumber} completado: ${results.filter(r => r.success).length}/${results.length} exitosos`);
+            
+            // Pausa entre lotes (excepto después del último)
+            if (i + CONCURRENT_BATCH < messagesToProcess && isAutoModeActive) {
+              console.log(`⏱️ Pausa de ${PAUSE_BETWEEN_BATCHES}s antes del siguiente lote...`);
+              await new Promise(resolve => setTimeout(resolve, PAUSE_BETWEEN_BATCHES * 1000));
             }
           }
           
           const remaining = messages.length - messagesToProcess;
-          if (remaining > 0) {
-            console.log(`⏰ Quedan ${remaining} mensajes pendientes. Se procesarán en el próximo ciclo (1 min).`);
-          }
           
-          console.log(`✅ Ciclo automático completado. Próxima verificación en 1 minuto.`);
+          console.log(`\n✅ Ciclo automático completado:`);
+          console.log(`   📊 Total procesados: ${processed}`);
+          console.log(`   ✅ Exitosos: ${successful}`);
+          console.log(`   ❌ Errores: ${errors}`);
+          if (remaining > 0) {
+            console.log(`   ⏰ Pendientes: ${remaining} (se procesarán en el próximo ciclo)`);
+          }
+          console.log(`   🔄 Próxima verificación en 1 minuto`);
           
         } catch (error) {
           console.error('Error en procesamiento automático:', error);
+        }
+      }
+
+      // Procesar un lote específico de mensajes (ej: las 6 más antiguas) en paralelo
+      async function processBatchMessages(batchSize = 6) {
+        if (isProcessing) {
+          showNotification('⏳ Ya hay mensajes procesándose. Espera a que termine.', 'warning');
+          return;
+        }
+        
+        try {
+          // Obtener mensajes sin procesar
+          const messages = await window.go.main.App.GetUnprocessedMessagesWithRealPhone(batchSize);
+          
+          if (messages.length === 0) {
+            showNotification('✅ No hay mensajes pendientes', 'info');
+            return;
+          }
+          
+          const total = messages.length;
+          console.log(`📦 Procesando lote de ${total} mensajes EN PARALELO...`);
+          
+          // Deshabilitar botones
+          const batchBtn = document.getElementById('processBatchBtn');
+          const allBtn = document.getElementById('processAllBtn');
+          const autoSwitch = document.getElementById('autoModeSwitch');
+          
+          if (batchBtn) {
+            batchBtn.disabled = true;
+            batchBtn.textContent = `⏳ Procesando ${total}...`;
+          }
+          if (allBtn) allBtn.disabled = true;
+          if (autoSwitch) autoSwitch.disabled = true;
+          
+          // Configuración de procesamiento paralelo
+          const CONCURRENT_BATCH = 3; // 3 mensajes simultáneos
+          let processed = 0;
+          let successful = 0;
+          let errors = 0;
+          
+          // Procesar en lotes paralelos
+          for (let i = 0; i < total; i += CONCURRENT_BATCH) {
+            const batch = messages.slice(i, Math.min(i + CONCURRENT_BATCH, total));
+            const batchNumber = Math.floor(i / CONCURRENT_BATCH) + 1;
+            const totalBatches = Math.ceil(total / CONCURRENT_BATCH);
+            
+            console.log(`\n🔷 Lote ${batchNumber}/${totalBatches}: Procesando ${batch.length} mensajes EN PARALELO...`);
+            
+            if (batchBtn) batchBtn.textContent = `⏳ Lote ${batchNumber}/${totalBatches}`;
+            
+            // Procesar todos los mensajes del lote EN PARALELO
+            const batchPromises = batch.map(async (msg, index) => {
+              const globalIndex = i + index + 1;
+              console.log(`  📋 [${globalIndex}/${total}] Iniciando: ${msg.sender_name || msg.sender_phone}`);
+              
+              try {
+                const startTime = Date.now();
+                await processSingleMessage(msg.id, msg.chat_jid, true); // true = permitir concurrencia
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                
+                console.log(`  ✅ [${globalIndex}/${total}] Completado en ${elapsed}s`);
+                return { success: true, id: msg.id };
+              } catch (error) {
+                console.error(`  ❌ [${globalIndex}/${total}] Error:`, error.message);
+                return { success: false, id: msg.id, error: error.message };
+              }
+            });
+            
+            // Esperar a que TODO el lote complete
+            const results = await Promise.all(batchPromises);
+            
+            // Contar resultados
+            results.forEach(result => {
+              processed++;
+              if (result.success) {
+                successful++;
+              } else {
+                errors++;
+              }
+            });
+            
+            console.log(`🔷 Lote ${batchNumber} completado: ${results.filter(r => r.success).length}/${results.length} exitosos`);
+            
+            // Pausa breve entre lotes (3 segundos)
+            if (i + CONCURRENT_BATCH < total) {
+              console.log(`⏱️ Pausa de 3s antes del siguiente lote...`);
+              await new Promise(resolve => setTimeout(resolve, 3000));
+            }
+          }
+          
+          // Mostrar resumen
+          console.log(`\n✅ Lote completado:`);
+          console.log(`   📊 Total procesados: ${processed}`);
+          console.log(`   ✅ Exitosos: ${successful}`);
+          console.log(`   ❌ Errores: ${errors}`);
+          
+          showNotification(
+            `✅ Procesamiento completo: ${successful}/${total} exitosos, ${errors} errores`,
+            successful === total ? 'success' : 'warning'
+          );
+          
+          // Refrescar vista
+          await refreshCurrentView();
+          
+        } catch (error) {
+          console.error('Error en procesamiento por lotes:', error);
+          showNotification(`Error: ${error}`, 'error');
+        } finally {
+          // Rehabilitar botones
+          const batchBtn = document.getElementById('processBatchBtn');
+          const allBtn = document.getElementById('processAllBtn');
+          const autoSwitch = document.getElementById('autoModeSwitch');
+          
+          if (batchBtn) {
+            batchBtn.disabled = false;
+            batchBtn.textContent = '📦 Procesar 6';
+          }
+          if (allBtn) {
+            allBtn.disabled = false;
+          }
+          if (autoSwitch) {
+            autoSwitch.disabled = false;
+          }
         }
       }
 
