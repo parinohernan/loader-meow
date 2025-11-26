@@ -440,7 +440,11 @@ func removerAcentos(s string) string {
 
 // buscarUbicacionExacta busca una ubicación con el texto exacto
 func (s *SupabaseService) buscarUbicacionExacta(direccion string) (string, error) {
-	url := fmt.Sprintf("%s/rest/v1/ubicaciones?direccion=eq.%s&select=id", s.url, direccion)
+	// IMPORTANTE: Codificar la dirección para URL (espacios, comas, caracteres especiales)
+	direccionEncoded := url.QueryEscape(direccion)
+	url := fmt.Sprintf("%s/rest/v1/ubicaciones?direccion=eq.%s&select=id", s.url, direccionEncoded)
+	
+	fmt.Printf("   🔗 URL de búsqueda: %s\n", url)
 	
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -813,25 +817,36 @@ func (s *SupabaseService) validarTelefono(telefono string) string {
 	return limpio
 }
 
-// formatearFecha convierte fecha a formato ISO
+// formatearFecha convierte fecha a formato dd/mm/aaaa
 func (s *SupabaseService) formatearFecha(fecha string) string {
+	// Formato de salida: dd/mm/aaaa (02/01/2006 en Go)
+	formatoSalida := "02/01/2006"
+	
 	if fecha == "" {
-		return time.Now().Format("2006-01-02")
+		return time.Now().Format(formatoSalida)
 	}
 	
-	// Intentar parsear diferentes formatos
-	formatos := []string{
-		"02/01/2006",
-		"2006-01-02",
-		"02-01-2006",
+	// Intentar parsear diferentes formatos de entrada
+	formatosEntrada := []string{
+		"02/01/2006",      // dd/mm/aaaa
+		"2006-01-02",      // aaaa-mm-dd
+		"02-01-2006",      // dd-mm-aaaa
+		"01/02/2006",      // mm/dd/aaaa (formato USA)
 	}
 	
-	for _, formato := range formatos {
+	for _, formato := range formatosEntrada {
 		if t, err := time.Parse(formato, fecha); err == nil {
-			return t.Format("2006-01-02")
+			// Convertir a formato dd/mm/aaaa
+			return t.Format(formatoSalida)
 		}
 	}
 	
+	// Si ya está en formato dd/mm/aaaa y no se pudo parsear, devolver tal cual
+	// (para casos donde la fecha ya es válida pero Go no la reconoce)
+	if len(fecha) == 10 && fecha[2] == '/' && fecha[5] == '/' {
+		return fecha // Ya está en formato dd/mm/aaaa
+	}
+	
 	// Si no se puede parsear, usar fecha actual
-	return time.Now().Format("2006-01-02")
+	return time.Now().Format(formatoSalida)
 }

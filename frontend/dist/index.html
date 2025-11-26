@@ -81,6 +81,83 @@
         opacity: 0.8;
       }
 
+      .connection-message {
+        max-width: 400px;
+        text-align: center;
+        margin-bottom: 20px;
+        font-size: 14px;
+        color: #b1c1c9;
+        line-height: 1.4;
+      }
+
+      .session-menu {
+        margin: auto 10px 20px;
+        padding: 12px;
+        border-radius: 12px;
+        background: #182229;
+        border: 1px solid #3b4043;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .session-menu-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        color: #e9edef;
+        font-size: 12px;
+      }
+
+      .session-status {
+        color: #25d366;
+        font-weight: 600;
+        font-size: 11px;
+      }
+
+      .session-detail {
+        color: #8696a0;
+        font-size: 11px;
+        line-height: 1.4;
+      }
+
+      .session-menu-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .session-btn {
+        width: 100%;
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: 1px solid #2a3942;
+        background: #202c33;
+        color: #e9edef;
+        cursor: pointer;
+        transition: background 0.2s, transform 0.2s;
+        font-size: 12px;
+      }
+
+      .session-btn:hover:not(:disabled) {
+        background: #2a3942;
+        transform: translateY(-1px);
+      }
+
+      .session-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      .session-btn.danger {
+        border-color: #f15c6d;
+        color: #f15c6d;
+      }
+
+      .session-btn.danger:hover:not(:disabled) {
+        background: rgba(241, 92, 109, 0.1);
+      }
+
       .qr-container {
         background: white;
         padding: 40px;
@@ -2141,6 +2218,7 @@
           CaricaLoader Meow
         </h1>
         <p>CaricaLoader - carga automática de ofertas</p>
+        <div id="connectionMessage" class="connection-message"></div>
         <div id="qrContainer" class="qr-container" style="display: none">
           <div id="qrCode">Esperando código QR...</div>
         </div>
@@ -2168,6 +2246,24 @@
           <button class="tab" onclick="showTab('settings')">
             🔧 Otras Configuraciones
           </button>
+
+          <div id="sessionMenu" class="session-menu">
+            <div class="session-menu-header">
+              <strong>Estado WhatsApp</strong>
+              <span id="sessionStatus" class="session-status">Desconectado</span>
+            </div>
+            <div id="sessionStatusDetail" class="session-detail">
+              Esperando conexión inicial
+            </div>
+            <div class="session-menu-actions">
+              <button class="session-btn" onclick="startLoginFlow()">
+                📲 Mostrar QR
+              </button>
+              <button class="session-btn danger" id="logoutBtn" onclick="logoutWhatsApp()">
+                🚪 Cerrar sesión
+              </button>
+            </div>
+          </div>
         </div>
 
         <!-- Contenido principal -->
@@ -2872,19 +2968,36 @@
       // Escuchar eventos
       window.runtime.EventsOn("qr-code", (qrCode) => {
         console.log("QR Code recibido");
+        showConnectionPanel(
+          "Escaneá el código QR desde WhatsApp &gt; Dispositivos vinculados para continuar."
+        );
         document.getElementById("qrContainer").style.display = "block";
         document.getElementById("qrCode").innerHTML = generateQR(qrCode);
         document.getElementById("connectBtn").style.display = "none";
+        updateSessionStatus("Esperando escaneo", "Escanea el QR con tu teléfono");
       });
 
       window.runtime.EventsOn("authenticated", () => {
         console.log("Autenticado!");
+        updateSessionStatus("Autenticado", "Sincronizando historial...");
         showMainInterface();
       });
 
       window.runtime.EventsOn("connected", () => {
         console.log("Conectado!");
+        updateSessionStatus("Conectado", "Sesión activa");
         showMainInterface();
+      });
+
+      window.runtime.EventsOn("logged-out", (reason) => {
+        console.warn("Sesión cerrada:", reason);
+        const detail =
+          reason && reason.length
+            ? reason
+            : "Sesión finalizada por el servidor";
+        updateSessionStatus("Desconectado", detail);
+        showConnectionPanel(`${detail}. Genera un nuevo QR para conectarte.`);
+        document.getElementById("connectBtn").style.display = "block";
       });
 
       window.runtime.EventsOn("new-message", (message) => {
@@ -2901,10 +3014,95 @@
         showPhoneAssociationModal(request);
       });
 
+      function updateSessionStatus(status, detail) {
+        const statusEl = document.getElementById("sessionStatus");
+        if (!statusEl) return;
+
+        statusEl.textContent = status;
+        if (status === "Conectado" || status === "Autenticado") {
+          statusEl.style.color = "#25d366";
+        } else if (status === "Conectando" || status === "Esperando escaneo") {
+          statusEl.style.color = "#fecd19";
+        } else {
+          statusEl.style.color = "#f15c6d";
+        }
+
+        const detailEl = document.getElementById("sessionStatusDetail");
+        if (detailEl && detail) {
+          detailEl.textContent = detail;
+        }
+      }
+
+      function showConnectionPanel(message) {
+        const panel = document.getElementById("connectionPanel");
+        if (panel) {
+          panel.style.display = "flex";
+        }
+
+        const messageEl = document.getElementById("connectionMessage");
+        if (messageEl) {
+          messageEl.innerHTML = message || "";
+        }
+
+        const qrContainer = document.getElementById("qrContainer");
+        if (qrContainer) {
+          qrContainer.style.display = "none";
+        }
+
+        const btn = document.getElementById("connectBtn");
+        if (btn) {
+          btn.innerHTML = "Conectar WhatsApp";
+          btn.disabled = false;
+          btn.style.display = "block";
+        }
+      }
+
+      function hideConnectionPanel() {
+        const panel = document.getElementById("connectionPanel");
+        if (panel) {
+          panel.style.display = "none";
+        }
+      }
+
+      function startLoginFlow(message) {
+        showConnectionPanel(
+          message || "Generando un nuevo QR, espera un momento..."
+        );
+        connectWhatsApp();
+      }
+
+      async function logoutWhatsApp() {
+        const btn = document.getElementById("logoutBtn");
+        if (!btn) {
+          return;
+        }
+        const originalText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = "Cerrando...";
+
+        try {
+          await window.go.main.App.LogoutWhatsApp();
+          updateSessionStatus(
+            "Desconectado",
+            "Sesión cerrada manualmente desde la app"
+          );
+          showConnectionPanel(
+            "Sesión cerrada. Presiona \"Conectar WhatsApp\" para generar un nuevo QR."
+          );
+        } catch (err) {
+          console.error("Error al cerrar sesión:", err);
+          alert("Error al cerrar sesión: " + err);
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = originalText;
+        }
+      }
+
       async function checkConnection() {
         try {
           const isLoggedIn = await window.go.main.App.IsLoggedIn();
           if (isLoggedIn) {
+            updateSessionStatus("Conectando", "Restaurando sesión existente...");
             await window.go.main.App.InitWhatsApp();
             await window.go.main.App.ConnectWhatsApp();
             showMainInterface();
@@ -2918,6 +3116,7 @@
         const btn = document.getElementById("connectBtn");
         btn.innerHTML = '<div class="loading"></div>Conectando...';
         btn.disabled = true;
+        updateSessionStatus("Conectando", "Preparando sesión...");
 
         try {
           await window.go.main.App.InitWhatsApp();
@@ -2935,7 +3134,7 @@
       }
 
       function showMainInterface() {
-        document.getElementById("connectionPanel").style.display = "none";
+        hideConnectionPanel();
         document.getElementById("sidebar").classList.add("active");
         refreshChats();
       }

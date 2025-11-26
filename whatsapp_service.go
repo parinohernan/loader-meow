@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/mattn/go-sqlite3"
 	"go.mau.fi/whatsmeow"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
+	whatsstore "go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -20,16 +22,20 @@ import (
 
 // WhatsAppService maneja la conexión y operaciones de WhatsApp
 type WhatsAppService struct {
-	client              *whatsmeow.Client
-	messageStore        *MessageStore
-	messageProcessor    *MessageProcessor
-	aiConfigManager     *AIConfigManager
-	systemConfigManager *SystemConfigManager
-	logger              waLog.Logger
-	qrChan              <-chan whatsmeow.QRChannelItem
-	onMessage           func(ChatMessage)
-	onQRCode            func(string)
-	onConnected         func()
+	client                   *whatsmeow.Client
+	messageStore             *MessageStore
+	messageProcessor         *MessageProcessor
+	aiConfigManager          *AIConfigManager
+	systemConfigManager      *SystemConfigManager
+	logger                   waLog.Logger
+	qrChan                   <-chan whatsmeow.QRChannelItem
+	qrCancel                 context.CancelFunc
+	qrMu                     sync.Mutex
+	onMessage                func(ChatMessage)
+	onQRCode                 func(string)
+	onAuthenticated          func()
+	onConnected              func()
+	onLoggedOut              func(string)
 	onPhoneAssociationNeeded func(PhoneAssociationRequest)
 }
 
@@ -70,20 +76,20 @@ type MessageStore struct {
 func NewMessageStore() (*MessageStore, error) {
 	// Obtener configuración de la base de datos
 	config := GetDatabaseConfig()
-	
+
 	// Conectar a MySQL
 	db, err := sql.Open("mysql", config.GetConnectionString())
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to MySQL database: %v", err)
 	}
-	
+
 	// Verificar conexión
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("failed to ping MySQL database: %v", err)
 	}
-	
+
 	// Configurar pool de conexiones para MySQL
-	db.SetMaxOpenConns(25)  // MySQL puede manejar múltiples conexiones
+	db.SetMaxOpenConns(25) // MySQL puede manejar múltiples conexiones
 	db.SetMaxIdleConns(5)
 	db.SetConnMaxLifetime(time.Hour)
 
@@ -123,10 +129,15 @@ func NewMessageStore() (*MessageStore, error) {
 			sender_phone VARCHAR(100) NOT NULL UNIQUE,
 			real_phone VARCHAR(50),
 			display_name VARCHAR(500),
+			nombre VARCHAR(255) DEFAULT '',
+			perfil ENUM('desconocido', 'loader', 'camionero') DEFAULT 'desconocido',
+			confianza INT DEFAULT 0,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 			INDEX idx_sender_phone (sender_phone),
-			INDEX idx_real_phone (real_phone)
+			INDEX idx_real_phone (real_phone),
+			INDEX idx_perfil (perfil),
+			INDEX idx_confianza (confianza)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
 
 		`CREATE TABLE IF NOT EXISTS ai_processing_results (
@@ -191,29 +202,29 @@ func (store *MessageStore) InitAIConfigTables() error {
 	if err != nil {
 		return fmt.Errorf("failed to read AI config migration file: %v", err)
 	}
-	
+
 	sqlContent := string(sqlBytes)
-	
+
 	// Dividir en statements individuales
 	statements := splitSQLStatements(sqlContent)
-	
+
 	// Ejecutar cada statement
 	for _, stmt := range statements {
 		stmt = strings.TrimSpace(stmt)
 		if stmt == "" || strings.HasPrefix(stmt, "--") {
 			continue
 		}
-		
+
 		_, err := store.db.Exec(stmt)
 		if err != nil {
 			// Log pero no fallar si la tabla ya existe
-			if !strings.Contains(err.Error(), "already exists") && 
-			   !strings.Contains(err.Error(), "Duplicate") {
+			if !strings.Contains(err.Error(), "already exists") &&
+				!strings.Contains(err.Error(), "Duplicate") {
 				return fmt.Errorf("failed to execute AI config migration: %v\nStatement: %s", err, stmt)
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -221,31 +232,31 @@ func (store *MessageStore) InitAIConfigTables() error {
 func splitSQLStatements(sql string) []string {
 	var statements []string
 	var current strings.Builder
-	
+
 	lines := strings.Split(sql, "\n")
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		
+
 		// Ignorar comentarios
 		if strings.HasPrefix(trimmed, "--") {
 			continue
 		}
-		
+
 		current.WriteString(line)
 		current.WriteString("\n")
-		
+
 		// Si termina con ; , es el final de un statement
 		if strings.HasSuffix(trimmed, ";") {
 			statements = append(statements, current.String())
 			current.Reset()
 		}
 	}
-	
+
 	// Agregar el último statement si hay uno
 	if current.Len() > 0 {
 		statements = append(statements, current.String())
 	}
-	
+
 	return statements
 }
 
@@ -256,34 +267,34 @@ func isIndexExistsError(err error) bool {
 	}
 	errMsg := err.Error()
 	// MariaDB/MySQL error codes para índice duplicado
-	return strings.Contains(errMsg, "Duplicate key name") || 
-	       strings.Contains(errMsg, "already exists") ||
-	       strings.Contains(errMsg, "Error 1061")
+	return strings.Contains(errMsg, "Duplicate key name") ||
+		strings.Contains(errMsg, "already exists") ||
+		strings.Contains(errMsg, "Error 1061")
 }
 
 // runMigrations ejecuta migraciones de base de datos
 func runMigrations(db *sql.DB) error {
 	// Verificar si las columnas ya existen
 	columns := []struct {
-		name         string
-		definition   string
+		name       string
+		definition string
 	}{
 		{"processing_attempts", "INT DEFAULT 0"},
 		{"last_processing_error", "TEXT"},
 		{"last_processing_attempt", "TIMESTAMP NULL"},
 	}
-	
+
 	for _, col := range columns {
 		// Intentar agregar la columna
 		alterQuery := fmt.Sprintf("ALTER TABLE messages ADD COLUMN %s %s", col.name, col.definition)
 		_, err := db.Exec(alterQuery)
-		
+
 		// Ignorar error si la columna ya existe
 		if err != nil && !isColumnExistsError(err) {
 			return fmt.Errorf("failed to add column %s: %v", col.name, err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -294,9 +305,9 @@ func isColumnExistsError(err error) bool {
 	}
 	errMsg := err.Error()
 	// MariaDB/MySQL error codes para columna duplicada
-	return strings.Contains(errMsg, "Duplicate column name") || 
-	       strings.Contains(errMsg, "column already exists") ||
-	       strings.Contains(errMsg, "Error 1060")
+	return strings.Contains(errMsg, "Duplicate column name") ||
+		strings.Contains(errMsg, "column already exists") ||
+		strings.Contains(errMsg, "Error 1060")
 }
 
 // Close cierra la base de datos
@@ -332,7 +343,7 @@ func (store *MessageStore) StoreMessage(id, chatJID, senderPhone, senderName, co
 		AND timestamp >= DATE_SUB(?, INTERVAL 24 HOUR)
 		AND timestamp <= DATE_ADD(?, INTERVAL 24 HOUR)
 	`, senderPhone, content, timestamp, timestamp).Scan(&exists)
-	
+
 	if err != nil {
 		return fmt.Errorf("error verificando duplicado: %v", err)
 	}
@@ -428,6 +439,41 @@ func (store *MessageStore) GetUnprocessedMessages(limit int) ([]ChatMessage, err
 	return messages, nil
 }
 
+// GetMessageByID obtiene un mensaje específico por ID y chatJID
+// Permite obtener cualquier mensaje, sin importar su estado (procesado, con errores, etc.)
+func (store *MessageStore) GetMessageByID(messageID, chatJID string) (*ProcessableMessage, error) {
+	query := `
+		SELECT m.id, m.chat_jid, m.sender_phone, m.sender_name, m.content, 
+		       m.timestamp, m.is_from_me, m.media_type, m.filename, m.processed,
+		       pa.real_phone
+		FROM messages m
+		INNER JOIN phone_associations pa ON m.sender_phone = pa.sender_phone
+		WHERE m.id = ? 
+		  AND m.chat_jid = ?
+		  AND m.content IS NOT NULL 
+		  AND m.content != ''
+		  AND pa.real_phone IS NOT NULL
+		  AND pa.real_phone != ''
+		LIMIT 1
+	`
+
+	var msg ProcessableMessage
+	err := store.db.QueryRow(query, messageID, chatJID).Scan(
+		&msg.ID, &msg.ChatJID, &msg.SenderPhone, &msg.SenderName, &msg.Content,
+		&msg.Timestamp, &msg.IsFromMe, &msg.MediaType, &msg.Filename, &msg.Processed,
+		&msg.RealPhone,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, nil // Mensaje no encontrado o sin asociación de teléfono
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &msg, nil
+}
+
 // GetProcessableMessages obtiene mensajes que pueden ser procesados por IA
 func (store *MessageStore) GetProcessableMessages(limit int) ([]ProcessableMessage, error) {
 	query := `
@@ -445,7 +491,7 @@ func (store *MessageStore) GetProcessableMessages(limit int) ([]ProcessableMessa
 		ORDER BY m.timestamp ASC
 		LIMIT ?
 	`
-	
+
 	rows, err := store.db.Query(query, limit)
 	if err != nil {
 		return nil, err
@@ -455,7 +501,7 @@ func (store *MessageStore) GetProcessableMessages(limit int) ([]ProcessableMessa
 	var messages []ProcessableMessage
 	for rows.Next() {
 		var msg ProcessableMessage
-		err := rows.Scan(&msg.ID, &msg.ChatJID, &msg.SenderPhone, &msg.SenderName, &msg.Content, 
+		err := rows.Scan(&msg.ID, &msg.ChatJID, &msg.SenderPhone, &msg.SenderName, &msg.Content,
 			&msg.Timestamp, &msg.IsFromMe, &msg.MediaType, &msg.Filename, &msg.Processed, &msg.RealPhone)
 		if err != nil {
 			return nil, err
@@ -477,7 +523,7 @@ func (store *MessageStore) GetProcessableMessagesCount() (int, error) {
 		  AND pa.real_phone IS NOT NULL
 		  AND pa.real_phone != ''
 	`
-	
+
 	var count int
 	err := store.db.QueryRow(query).Scan(&count)
 	if err != nil {
@@ -502,7 +548,7 @@ func (store *MessageStore) GetUnprocessedMessagesWithRealPhone(limit int) ([]Pro
 		ORDER BY m.timestamp DESC
 		LIMIT ?
 	`
-	
+
 	rows, err := store.db.Query(query, limit)
 	if err != nil {
 		return nil, err
@@ -513,9 +559,9 @@ func (store *MessageStore) GetUnprocessedMessagesWithRealPhone(limit int) ([]Pro
 	for rows.Next() {
 		var msg ProcessableMessage
 		var attempts int
-		
-		err := rows.Scan(&msg.ID, &msg.ChatJID, &msg.SenderPhone, &msg.SenderName, &msg.Content, 
-			&msg.Timestamp, &msg.IsFromMe, &msg.MediaType, &msg.Filename, &msg.Processed, 
+
+		err := rows.Scan(&msg.ID, &msg.ChatJID, &msg.SenderPhone, &msg.SenderName, &msg.Content,
+			&msg.Timestamp, &msg.IsFromMe, &msg.MediaType, &msg.Filename, &msg.Processed,
 			&msg.RealPhone, &attempts)
 		if err != nil {
 			return nil, err
@@ -636,8 +682,51 @@ func (store *MessageStore) GetMessageStats() (total, processed, unprocessed int,
 	return
 }
 
+// UpdatePhoneProfiling actualiza el perfil y confianza de un número de teléfono
+func (store *MessageStore) UpdatePhoneProfiling(realPhone string, isValidLoad bool) error {
+	// Determinar el cambio en confianza
+	// +1 si envió una carga válida (es loader)
+	// -1 si envió mensaje de camionero buscando carga (array vacío)
+	confianzaDelta := 1
+	if !isValidLoad {
+		confianzaDelta = -1
+	}
+
+	// Actualizar confianza
+	_, err := store.db.Exec(`
+		UPDATE phone_associations 
+		SET confianza = confianza + ?,
+		    updated_at = NOW()
+		WHERE real_phone = ?
+	`, confianzaDelta, realPhone)
+
+	if err != nil {
+		return fmt.Errorf("failed to update trust score: %v", err)
+	}
+
+	// Actualizar perfil basado en el score de confianza
+	_, err = store.db.Exec(`
+		UPDATE phone_associations 
+		SET perfil = CASE 
+			WHEN confianza > 0 THEN 'loader'
+			WHEN confianza < 0 THEN 'camionero'
+			ELSE 'desconocido'
+		END,
+		updated_at = NOW()
+		WHERE real_phone = ?
+	`, realPhone)
+
+	if err != nil {
+		return fmt.Errorf("failed to update profile: %v", err)
+	}
+
+	return nil
+}
+
 // NewWhatsAppService crea una nueva instancia del servicio
 func NewWhatsAppService() (*WhatsAppService, error) {
+	whatsstore.SetOSInfo("Carica Loader", [3]uint32{1, 0, 0})
+
 	logger := waLog.Stdout("WhatsApp", "INFO", true)
 	dbLog := waLog.Stdout("Database", "INFO", true)
 
@@ -676,7 +765,7 @@ func NewWhatsAppService() (*WhatsAppService, error) {
 
 	// Inicializar AI config manager
 	aiConfigManager := NewAIConfigManager(messageStore.db)
-	
+
 	// Inicializar System config manager
 	systemConfigManager := NewSystemConfigManager(messageStore.db)
 
@@ -768,25 +857,132 @@ func (s *WhatsAppService) eventHandler(evt interface{}) {
 			s.onConnected()
 		}
 	case *events.LoggedOut:
-		s.logger.Warnf("Device logged out")
+		s.handleLoggedOut(v)
 	}
+}
+
+// handleLoggedOut se ejecuta cuando el servidor desconecta definitivamente el dispositivo
+func (s *WhatsAppService) handleLoggedOut(evt *events.LoggedOut) {
+	reason := evt.Reason.String()
+	if reason == "" {
+		reason = "sin razón reportada"
+	}
+
+	if evt.OnConnect {
+		s.logger.Warnf("🔌 Logout recibido durante la conexión: %s", reason)
+	} else {
+		s.logger.Warnf("🔌 Dispositivo removido por el servidor: %s", reason)
+	}
+
+	s.resetQRChannel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := s.client.Store.Delete(ctx); err != nil {
+		s.logger.Warnf("No se pudo limpiar la sesión tras el logout: %v", err)
+	}
+
+	s.client.Disconnect()
+
+	if s.onLoggedOut != nil {
+		s.onLoggedOut(reason)
+	} else {
+		go func() {
+			time.Sleep(2 * time.Second)
+			if err := s.Connect(); err != nil {
+				s.logger.Errorf("Error al reconectar después del logout: %v", err)
+			}
+		}()
+	}
+}
+
+// resetQRChannel detiene la escucha del canal de QR actual
+func (s *WhatsAppService) resetQRChannel() {
+	s.qrMu.Lock()
+	defer s.qrMu.Unlock()
+
+	if s.qrCancel != nil {
+		s.qrCancel()
+		s.qrCancel = nil
+	}
+	s.qrChan = nil
+}
+
+// initQRChannel crea un nuevo canal de QR y comienza a reenviar eventos a la UI
+func (s *WhatsAppService) initQRChannel() error {
+	s.qrMu.Lock()
+	defer s.qrMu.Unlock()
+
+	if s.qrCancel != nil {
+		s.qrCancel()
+		s.qrCancel = nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	qrChan, err := s.client.GetQRChannel(ctx)
+	if err != nil {
+		cancel()
+		return fmt.Errorf("failed to get QR channel: %w", err)
+	}
+
+	s.qrChan = qrChan
+	s.qrCancel = cancel
+
+	go s.consumeQRChannel(qrChan)
+	return nil
+}
+
+// consumeQRChannel reenvía eventos del canal QR hacia los callbacks configurados
+func (s *WhatsAppService) consumeQRChannel(qrChan <-chan whatsmeow.QRChannelItem) {
+	if qrChan == nil {
+		return
+	}
+
+	for evt := range qrChan {
+		switch evt.Event {
+		case whatsmeow.QRChannelEventCode:
+			s.logger.Infof("🔐 QR recibido; expira en %s", evt.Timeout)
+			if s.onQRCode != nil && evt.Code != "" {
+				s.onQRCode(evt.Code)
+			}
+		case whatsmeow.QRChannelEventError:
+			s.logger.Errorf("❌ Error en emparejamiento: %v", evt.Error)
+		case "success":
+			s.logger.Infof("✅ QR escaneado correctamente, esperando 'connected'")
+			if s.onAuthenticated != nil {
+				s.onAuthenticated()
+			}
+		case "timeout":
+			s.logger.Warnf("⌛ QR expirado, esperando renovación del servidor")
+		default:
+			s.logger.Warnf("Evento de QR no manejado: %s", evt.Event)
+		}
+	}
+
+	s.qrMu.Lock()
+	if s.qrChan == qrChan {
+		s.qrChan = nil
+		s.qrCancel = nil
+	}
+	s.qrMu.Unlock()
 }
 
 // handleMessage procesa un mensaje recibido
 func (s *WhatsAppService) handleMessage(msg *events.Message) {
 	chatJID := msg.Info.Chat.String()
-	
+
 	// ========== LOGGING DETALLADO PARA DEBUG ==========
 	// Log simplificado del mensaje
 	s.logger.Infof("📨 Nuevo mensaje: %s en %s", msg.Info.PushName, msg.Info.Chat.String())
-	
+
 	// Extraer contenido del mensaje
 	content := extractTextContent(msg.Message)
-	
+
 	// Extraer número de teléfono Y nombre del remitente
 	var senderPhone string
 	var senderName string
-	
+
 	if msg.Info.IsFromMe {
 		// Si es nuestro mensaje
 		senderPhone = s.client.Store.ID.User
@@ -794,45 +990,45 @@ func (s *WhatsAppService) handleMessage(msg *events.Message) {
 	} else {
 		// Para mensajes entrantes
 		senderJID := msg.Info.Sender
-		
+
 		// SIEMPRE intentar obtener el nombre primero
 		senderName = s.getSenderName(msg)
-		
-	// Determinar el "número de teléfono" o identificador según el tipo de servidor
-	switch senderJID.Server {
-	case "lid":
-		// Usuario con LID - intentar obtener número real de asociaciones
-		// s.logger.Infof("🔍 Detectado LID: %s", senderJID.User)
-		realPhone := s.GetRealPhone(senderJID.User)
-		if realPhone != "" {
-			senderPhone = realPhone
-			s.logger.Infof("✅ Número real encontrado: %s para %s", senderPhone, senderName)
-		} else {
-			s.requestPhoneAssociation(senderJID.User, senderName, msg.Info.Chat.String())
-			senderPhone = senderJID.User // Usar LID temporalmente hasta que se asocie
-			s.logger.Infof("🔗 Solicitando asociación para: %s (LID: %s)", senderName, senderJID.User)
+
+		// Determinar el "número de teléfono" o identificador según el tipo de servidor
+		switch senderJID.Server {
+		case "lid":
+			// Usuario con LID - intentar obtener número real de asociaciones
+			// s.logger.Infof("🔍 Detectado LID: %s", senderJID.User)
+			realPhone := s.GetRealPhone(senderJID.User)
+			if realPhone != "" {
+				senderPhone = realPhone
+				s.logger.Infof("✅ Número real encontrado: %s para %s", senderPhone, senderName)
+			} else {
+				s.requestPhoneAssociation(senderJID.User, senderName, msg.Info.Chat.String())
+				senderPhone = senderJID.User // Usar LID temporalmente hasta que se asocie
+				s.logger.Infof("🔗 Solicitando asociación para: %s (LID: %s)", senderName, senderJID.User)
+			}
+
+		case "s.whatsapp.net":
+			// Usuario normal - tiene número real
+			senderPhone = senderJID.User
+
+		default:
+			// Otro tipo de servidor
+			senderPhone = senderJID.User
 		}
-		
-	case "s.whatsapp.net":
-		// Usuario normal - tiene número real
-		senderPhone = senderJID.User
-		
-	default:
-		// Otro tipo de servidor
-		senderPhone = senderJID.User
-	}
-		
+
 		// Si no hay nombre, usar el phone como nombre
 		if senderName == "" {
 			senderName = senderPhone
 		}
 	}
-	
+
 	// Log final eliminado para simplificar
-	
+
 	// Obtener nombre del chat
 	name := s.getChatName(msg.Info.Chat, chatJID, senderPhone)
-	
+
 	// Actualizar chat en la base de datos
 	err := s.messageStore.StoreChat(chatJID, name, msg.Info.Timestamp)
 	if err != nil {
@@ -886,20 +1082,19 @@ func (s *WhatsAppService) handleMessage(msg *events.Message) {
 	}
 }
 
-
 // ParticipantInfo contiene toda la información disponible de un participante
 type ParticipantInfo struct {
-	Index                   int
-	DisplayName             string
-	JID                     string
-	LID                     string
-	PhoneNumber             string
-	PhoneSource             string
-	PhoneFromLID            string
-	ResolvedPhone           string
-	ResolvedPhoneFromLID    string
-	ContactName             string
-	PushName                string
+	Index                int
+	DisplayName          string
+	JID                  string
+	LID                  string
+	PhoneNumber          string
+	PhoneSource          string
+	PhoneFromLID         string
+	ResolvedPhone        string
+	ResolvedPhoneFromLID string
+	ContactName          string
+	PushName             string
 }
 
 // PhoneAssociation representa una asociación entre sender_phone y número real
@@ -929,44 +1124,42 @@ type PhoneAssociationRequest struct {
 	Timestamp   time.Time `json:"timestamp"`
 }
 
-
-
 // ListAllParticipantNumbers obtiene TODOS los números/IDs disponibles de todos los participantes
 func (s *WhatsAppService) ListAllParticipantNumbers(groupJID types.JID) []ParticipantInfo {
 	var participants []ParticipantInfo
-	
-	groupInfo, err := s.client.GetGroupInfo(groupJID)
+
+	groupInfo, err := s.client.GetGroupInfo(context.Background(), groupJID)
 	if err != nil {
 		s.logger.Errorf("Error obteniendo info del grupo: %v", err)
 		return participants
 	}
-	
+
 	s.logger.Infof("📋 Listando números de %d participantes del grupo '%s'", len(groupInfo.Participants), groupInfo.Name)
-	
+
 	for i, participant := range groupInfo.Participants {
 		info := ParticipantInfo{
-			Index:      i + 1,
+			Index:       i + 1,
 			DisplayName: participant.DisplayName,
-			JID:        participant.JID.String(),
-			LID:        participant.LID.String(),
+			JID:         participant.JID.String(),
+			LID:         participant.LID.String(),
 		}
-		
+
 		// Pequeño delay para evitar rate limits
 		if i > 0 {
 			time.Sleep(500 * time.Millisecond)
 		}
-		
+
 		// Intentar obtener número real del JID
 		if participant.JID.Server == "s.whatsapp.net" {
 			info.PhoneNumber = participant.JID.User
 			info.PhoneSource = "JID"
 		}
-		
+
 		// Intentar obtener número real del LID
 		if participant.LID.Server == "s.whatsapp.net" {
 			info.PhoneFromLID = participant.LID.User
 		}
-		
+
 		// Intentar resolver con GetUserInfo solo si es necesario
 		if participant.JID.Server == "lid" {
 			realPhone := s.resolvePhoneFromUserInfo(participant.JID)
@@ -975,7 +1168,7 @@ func (s *WhatsAppService) ListAllParticipantNumbers(groupJID types.JID) []Partic
 				info.PhoneSource = "GetUserInfo"
 			}
 		}
-		
+
 		// Solo intentar resolver LID si es diferente al JID
 		if participant.LID.Server == "lid" && participant.LID.User != participant.JID.User {
 			realPhoneFromLID := s.resolvePhoneFromUserInfo(participant.LID)
@@ -983,16 +1176,16 @@ func (s *WhatsAppService) ListAllParticipantNumbers(groupJID types.JID) []Partic
 				info.ResolvedPhoneFromLID = realPhoneFromLID
 			}
 		}
-		
+
 		// Obtener información adicional
 		contact, err := s.client.Store.Contacts.GetContact(context.Background(), participant.JID)
 		if err == nil {
 			info.ContactName = contact.FullName
 			info.PushName = contact.PushName
 		}
-		
+
 		participants = append(participants, info)
-		
+
 		// Log detallado
 		s.logger.Infof("--- Participante #%d: %s ---", info.Index, info.DisplayName)
 		s.logger.Infof("  📱 Número principal: %s (fuente: %s)", info.PhoneNumber, info.PhoneSource)
@@ -1004,28 +1197,27 @@ func (s *WhatsAppService) ListAllParticipantNumbers(groupJID types.JID) []Partic
 		s.logger.Infof("  🏷️ PushName: %s", info.PushName)
 		s.logger.Infof("")
 	}
-	
+
 	return participants
 }
-
 
 // resolvePhoneFromUserInfo intenta obtener el número real usando GetUserInfo
 func (s *WhatsAppService) resolvePhoneFromUserInfo(lidJID types.JID) string {
 	s.logger.Infof("📞 Llamando GetUserInfo para LID: %s", lidJID.String())
-	
+
 	// Intentar obtener información del usuario
-	users, err := s.client.GetUserInfo([]types.JID{lidJID})
+	users, err := s.client.GetUserInfo(context.Background(), []types.JID{lidJID})
 	if err != nil {
 		s.logger.Warnf("Error en GetUserInfo: %v", err)
 		return ""
 	}
-	
+
 	// Verificar si obtuvimos información
 	if len(users) == 0 {
 		s.logger.Warnf("GetUserInfo no devolvió información")
 		return ""
 	}
-	
+
 	// Examinar la información del usuario
 	for jid, info := range users {
 		s.logger.Infof("UserInfo recibido:")
@@ -1034,23 +1226,22 @@ func (s *WhatsAppService) resolvePhoneFromUserInfo(lidJID types.JID) string {
 		s.logger.Infof("  - Status: %s", info.Status)
 		s.logger.Infof("  - PictureID: %s", info.PictureID)
 		s.logger.Infof("  - Devices: %v", info.Devices)
-		
+
 		// Si el JID de respuesta es diferente al LID, es el número real
 		if jid.Server == "s.whatsapp.net" && jid.User != lidJID.User {
 			s.logger.Infof("✅✅✅ Número real encontrado en GetUserInfo: %s", jid.User)
 			return jid.User
 		}
 	}
-	
+
 	s.logger.Warnf("GetUserInfo no reveló el número real")
 	return ""
 }
 
-
 // getSenderName intenta obtener el nombre del contacto
 func (s *WhatsAppService) getSenderName(msg *events.Message) string {
 	senderJID := msg.Info.Sender
-	
+
 	// Intentar obtener el nombre del contacto guardado
 	contact, err := s.client.Store.Contacts.GetContact(context.Background(), senderJID)
 	if err == nil {
@@ -1064,12 +1255,12 @@ func (s *WhatsAppService) getSenderName(msg *events.Message) string {
 			return contact.PushName
 		}
 	}
-	
+
 	// Si no hay contacto guardado, intentar obtener el PushName del mensaje
 	if msg.Info.PushName != "" {
 		return msg.Info.PushName
 	}
-	
+
 	return ""
 }
 
@@ -1089,7 +1280,7 @@ func (s *WhatsAppService) getChatName(jid types.JID, chatJID string, sender stri
 	var name string
 	if jid.Server == "g.us" {
 		// Grupo
-		groupInfo, err := s.client.GetGroupInfo(jid)
+		groupInfo, err := s.client.GetGroupInfo(context.Background(), jid)
 		if err == nil && groupInfo.Name != "" {
 			name = groupInfo.Name
 		} else {
@@ -1112,24 +1303,35 @@ func (s *WhatsAppService) getChatName(jid types.JID, chatJID string, sender stri
 // Connect conecta al cliente de WhatsApp
 func (s *WhatsAppService) Connect() error {
 	if s.client.Store.ID == nil {
-		// Necesita escanear QR
-		qrChan, _ := s.client.GetQRChannel(context.Background())
-		s.qrChan = qrChan
-		
-		err := s.client.Connect()
-		if err != nil {
-			return fmt.Errorf("failed to connect: %v", err)
+		if err := s.initQRChannel(); err != nil {
+			return fmt.Errorf("failed to prepare QR channel: %w", err)
 		}
-		
-		return nil
 	}
-	
-	// Ya está autenticado, solo conectar
-	err := s.client.Connect()
-	if err != nil {
-		return fmt.Errorf("failed to connect: %v", err)
+
+	if err := s.client.Connect(); err != nil {
+		return fmt.Errorf("failed to connect: %w", err)
 	}
-	
+	return nil
+}
+
+// Logout cierra la sesión actual y limpia la información del dispositivo
+func (s *WhatsAppService) Logout() error {
+	s.logger.Infof("🔓 Logout solicitado manualmente")
+	s.resetQRChannel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := s.client.Logout(ctx); err != nil {
+		return fmt.Errorf("failed to logout: %w", err)
+	}
+
+	s.client.Disconnect()
+
+	if s.onLoggedOut != nil {
+		go s.onLoggedOut("Logout manual solicitado")
+	}
+
 	return nil
 }
 
@@ -1139,13 +1341,13 @@ func (s *WhatsAppService) StartAutoProcessor() {
 		s.logger.Warnf("Message processor not initialized, cannot start auto processing")
 		return
 	}
-	
+
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
-		
+
 		s.logger.Infof("🤖 Iniciando procesamiento automático cada 5 minutos")
-		
+
 		for range ticker.C {
 			// Procesar hasta 10 mensajes cada 5 minutos
 			results, err := s.messageProcessor.ProcessPendingMessages(10)
@@ -1153,11 +1355,11 @@ func (s *WhatsAppService) StartAutoProcessor() {
 				s.logger.Errorf("Error en procesamiento automático: %v", err)
 				continue
 			}
-			
+
 			if len(results) > 0 {
 				successCount := 0
 				errorCount := 0
-				
+
 				for _, result := range results {
 					if result.Status == "success" {
 						successCount++
@@ -1165,8 +1367,8 @@ func (s *WhatsAppService) StartAutoProcessor() {
 						errorCount++
 					}
 				}
-				
-				s.logger.Infof("🤖 Procesamiento automático completado: %d exitosos, %d errores", 
+
+				s.logger.Infof("🤖 Procesamiento automático completado: %d exitosos, %d errores",
 					successCount, errorCount)
 			}
 		}
@@ -1266,7 +1468,7 @@ func (s *WhatsAppService) GetSendersForAssociation() ([]SenderInfo, error) {
 		LEFT JOIN phone_associations pa ON s.sender_phone = pa.sender_phone
 		ORDER BY s.message_count DESC, s.last_message DESC
 	`
-	
+
 	rows, err := s.messageStore.db.Query(query)
 	if err != nil {
 		s.logger.Errorf("Error en consulta SQL: %v", err)
@@ -1274,12 +1476,12 @@ func (s *WhatsAppService) GetSendersForAssociation() ([]SenderInfo, error) {
 		return []SenderInfo{}, nil
 	}
 	defer rows.Close()
-	
+
 	var senders []SenderInfo
 	for rows.Next() {
 		var sender SenderInfo
 		var lastMessageStr string
-		
+
 		err := rows.Scan(
 			&sender.SenderPhone,
 			&sender.SenderName,
@@ -1292,7 +1494,7 @@ func (s *WhatsAppService) GetSendersForAssociation() ([]SenderInfo, error) {
 			s.logger.Errorf("Error al escanear sender: %v", err)
 			continue // Saltar este registro pero continuar con los demás
 		}
-		
+
 		// Convertir string a time.Time
 		if lastMessageStr != "" {
 			lastMessage, err := time.Parse("2006-01-02 15:04:05", lastMessageStr)
@@ -1309,10 +1511,10 @@ func (s *WhatsAppService) GetSendersForAssociation() ([]SenderInfo, error) {
 			// Sin mensajes, usar fecha vacía
 			sender.LastMessage = time.Time{}
 		}
-		
+
 		senders = append(senders, sender)
 	}
-	
+
 	s.logger.Infof("📋 Obtenidos %d remitentes para asociaciones", len(senders))
 	return senders, nil
 }
@@ -1328,11 +1530,11 @@ func (s *WhatsAppService) SavePhoneAssociation(senderPhone, realPhone, displayNa
 		display_name = VALUES(display_name), 
 		updated_at = NOW()
 	`, senderPhone, realPhone, displayName)
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to save phone association: %v", err)
 	}
-	
+
 	s.logger.Infof("✅ Asociación guardada: %s -> %s (%s)", senderPhone, realPhone, displayName)
 	return nil
 }
@@ -1343,16 +1545,16 @@ func (s *WhatsAppService) DeletePhoneAssociation(senderPhone string) error {
 	if err != nil {
 		return fmt.Errorf("failed to delete phone association: %v", err)
 	}
-	
+
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("failed to get rows affected: %v", err)
 	}
-	
+
 	if rowsAffected == 0 {
 		return fmt.Errorf("phone association not found")
 	}
-	
+
 	s.logger.Infof("🗑️ Asociación eliminada: %s", senderPhone)
 	return nil
 }
@@ -1364,12 +1566,71 @@ func (s *WhatsAppService) GetRealPhone(senderPhone string) string {
 		"SELECT real_phone FROM phone_associations WHERE sender_phone = ?",
 		senderPhone,
 	).Scan(&realPhone)
-	
+
 	if err != nil {
 		return "" // No encontrado
 	}
-	
+
 	return realPhone
+}
+
+// UpdatePhoneProfiling actualiza el perfil y confianza de un número de teléfono
+func (s *WhatsAppService) UpdatePhoneProfiling(realPhone string, isValidLoad bool) error {
+	// Determinar el cambio en confianza
+	// +1 si envió una carga válida (es loader)
+	// -1 si envió mensaje de camionero buscando carga
+	confianzaDelta := 1
+	if !isValidLoad {
+		confianzaDelta = -1
+	}
+
+	// Actualizar confianza
+	_, err := s.messageStore.db.Exec(`
+		UPDATE phone_associations 
+		SET confianza = confianza + ?,
+		    updated_at = NOW()
+		WHERE real_phone = ?
+	`, confianzaDelta, realPhone)
+
+	if err != nil {
+		return fmt.Errorf("failed to update trust score: %v", err)
+	}
+
+	// Actualizar perfil basado en el score de confianza
+	_, err = s.messageStore.db.Exec(`
+		UPDATE phone_associations 
+		SET perfil = CASE 
+			WHEN confianza > 0 THEN 'loader'
+			WHEN confianza < 0 THEN 'camionero'
+			ELSE 'desconocido'
+		END,
+		updated_at = NOW()
+		WHERE real_phone = ?
+	`, realPhone)
+
+	if err != nil {
+		return fmt.Errorf("failed to update profile: %v", err)
+	}
+
+	s.logger.Infof("📊 Perfil actualizado para %s: confianza %+d", realPhone, confianzaDelta)
+	return nil
+}
+
+// UpdatePhoneName actualiza el nombre de un contacto
+func (s *WhatsAppService) UpdatePhoneName(realPhone, nombre string) error {
+	_, err := s.messageStore.db.Exec(`
+		UPDATE phone_associations 
+		SET nombre = ?,
+		    updated_at = NOW()
+		WHERE real_phone = ?
+	`, nombre, realPhone)
+
+	if err != nil {
+		return fmt.Errorf("failed to update phone name: %v", err)
+	}
+
+	s.logger.Infof("✏️ Nombre actualizado para %s: %s", realPhone, nombre)
+	return nil
 }
 
 // requestPhoneAssociation solicita una asociación de teléfono
@@ -1386,7 +1647,3 @@ func (s *WhatsAppService) requestPhoneAssociation(lid, displayName, groupJID str
 }
 
 // ===== FUNCIONES SIMPLIFICADAS =====
-
-
-
-

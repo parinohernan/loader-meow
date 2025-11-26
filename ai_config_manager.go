@@ -9,8 +9,13 @@ import (
 
 // AIConfigManager maneja la configuración de IA desde la base de datos
 type AIConfigManager struct {
-	db *sql.DB
-	mu sync.RWMutex
+	db                *sql.DB
+	mu                sync.RWMutex
+	
+	// Caché de configuración activa (optimización para concurrencia)
+	activeConfigCache *AIConfigDB
+	cacheTime         time.Time
+	cacheTTL          time.Duration // Time-to-live del caché (por defecto 2 segundos)
 }
 
 // AIProvider representa un proveedor de IA
@@ -65,7 +70,8 @@ type AIConfigDB struct {
 // NewAIConfigManager crea una nueva instancia del manejador
 func NewAIConfigManager(db *sql.DB) *AIConfigManager {
 	return &AIConfigManager{
-		db: db,
+		db:       db,
+		cacheTTL: 2 * time.Second, // Caché de config activa por 2 segundos (optimiza concurrencia)
 	}
 }
 
@@ -180,11 +186,45 @@ func (m *AIConfigManager) GetAllConfigs() ([]AIConfigDB, error) {
 	return configs, nil
 }
 
-// GetActiveConfig obtiene la configuración actualmente activa
+// GetActiveConfig obtiene la configuración actualmente activa (con caché para optimizar concurrencia)
 func (m *AIConfigManager) GetActiveConfig() (*AIConfigDB, error) {
+	// Paso 1: Intentar leer del caché (solo RLock, permite múltiples lecturas simultáneas)
 	m.mu.RLock()
-	defer m.mu.RUnlock()
+	if m.activeConfigCache != nil && time.Since(m.cacheTime) < m.cacheTTL {
+		cached := m.activeConfigCache
+		m.mu.RUnlock()
+		// fmt.Printf("🚀 Caché hit - usando config en memoria (sin DB query)\n")
+		return cached, nil
+	}
+	m.mu.RUnlock()
 	
+	// Paso 2: Caché expirado o vacío, necesitamos Lock exclusivo para actualizar
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
+	// Double-check: otro goroutine pudo haber actualizado el caché mientras esperábamos el Lock
+	if m.activeConfigCache != nil && time.Since(m.cacheTime) < m.cacheTTL {
+		// fmt.Printf("🚀 Caché hit (double-check) - otro goroutine ya actualizó\n")
+		return m.activeConfigCache, nil
+	}
+	
+	// Paso 3: Leer de BD y actualizar caché
+	// fmt.Printf("💾 Caché miss - leyendo config activa desde BD\n")
+	config, err := m.getActiveConfigFromDB()
+	if err != nil {
+		return nil, err
+	}
+	
+	// Actualizar caché
+	m.activeConfigCache = config
+	m.cacheTime = time.Now()
+	
+	return config, nil
+}
+
+// getActiveConfigFromDB lee la configuración activa desde la base de datos (función interna)
+// NOTA: Esta función debe llamarse solo cuando ya se tiene el Lock (m.mu.Lock)
+func (m *AIConfigManager) getActiveConfigFromDB() (*AIConfigDB, error) {
 	var c AIConfigDB
 	var lastUsedAt, lastSuccessAt sql.NullTime
 	var lastError sql.NullString
@@ -348,7 +388,16 @@ func (m *AIConfigManager) SetActiveConfig(id int) error {
 		return err
 	}
 	
-	return tx.Commit()
+	// Commit de la transacción
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	
+	// Invalidar caché para que se recargue en la próxima lectura
+	m.activeConfigCache = nil
+	fmt.Printf("🔄 Caché invalidado (SetActiveConfig)\n")
+	
+	return nil
 }
 
 // RotateToNextConfig cambia a la siguiente configuración disponible
@@ -451,14 +500,26 @@ func (m *AIConfigManager) RotateToNextConfig() (*AIConfigDB, error) {
 	
 	// Establecer la nueva configuración como activa
 	fmt.Printf("🔄 Activando nueva configuración ID=%d...\n", nextConfig.ID)
-	if err := m.SetActiveConfig(nextConfig.ID); err != nil {
-		fmt.Printf("❌ Error activando configuración: %v\n", err)
-		return nil, err
+	fmt.Printf("   📋 Detalles: %s - %s (%s)\n", nextConfig.ProviderDisplay, nextConfig.ModelDisplay, nextConfig.Name)
+	
+	activateErr := m.SetActiveConfig(nextConfig.ID)
+	if activateErr != nil {
+		fmt.Printf("❌ ERROR AL ACTIVAR: %v\n", activateErr)
+		fmt.Printf("❌ Tipo de error: %T\n", activateErr)
+		return nil, fmt.Errorf("error activando configuración ID=%d: %v", nextConfig.ID, activateErr)
 	}
 	
+	fmt.Printf("✅ SetActiveConfig completado sin errores\n")
 	nextConfig.IsActive = true
+	
+	// Actualizar caché con la nueva configuración activa
+	m.activeConfigCache = nextConfig
+	m.cacheTime = time.Now()
+	fmt.Printf("🔄 Caché actualizado con nueva configuración\n")
+	
 	fmt.Printf("✅ Configuración activada exitosamente: %s - %s (%s)\n", 
 		nextConfig.ProviderDisplay, nextConfig.ModelDisplay, nextConfig.Name)
+	fmt.Printf("🔙 Retornando nextConfig a ai_provider_service...\n")
 	
 	return nextConfig, nil
 }

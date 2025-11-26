@@ -45,12 +45,12 @@ type MessageStore struct {
 }
 
 //.................................................................
- 
-//DB    
- 
-	// Open SQLite database for messages
-// Initialize DB message store   "messages.db"   tab,chats  
-// 
+
+//DB
+
+// Open SQLite database for messages
+// Initialize DB message store   "messages.db"   tab,chats
+//
 func NewMessageStore() (*MessageStore, error) {
 	// Create directory for database if it doesn't exist
 	if err := os.MkdirAll("store", 0755); err != nil {
@@ -118,8 +118,8 @@ func (store *MessageStore) StoreChat(jid, name string, lastMessageTime time.Time
 	return err
 }
 
-//.................................................................
-//INSERT OR REPLACE INTO messages
+// .................................................................
+// INSERT OR REPLACE INTO messages
 // Store a message in the database
 func (store *MessageStore) StoreMessage(id, chatJID, sender, content string, timestamp time.Time, isFromMe bool,
 	mediaType, filename, url string, mediaKey, fileSHA256, fileEncSHA256 []byte, fileLength uint64) error {
@@ -514,16 +514,14 @@ func handleStatusUpdate(client *whatsmeow.Client, messageStore *MessageStore, ms
 		return
 	}
 
-
-    //INSERT OR REPLACE INTO chats
+	//INSERT OR REPLACE INTO chats
 	// Ensure the "Status Updates" chat exists in the DB
 	err := messageStore.StoreChat(dbChatJID, "Status Updates", msg.Info.Timestamp)
 	if err != nil {
 		logger.Warnf("Failed to store status chat: %v", err)
 	}
 
-
-    //INSERT OR REPLACE INTO messages 
+	//INSERT OR REPLACE INTO messages
 	// Store the status message in the database
 	err = messageStore.StoreMessage(
 		msg.Info.ID,
@@ -561,7 +559,7 @@ func handleStatusUpdate(client *whatsmeow.Client, messageStore *MessageStore, ms
 // .................................................................
 
 /*
-messageStore.StoreChat     //INSERT OR REPLACE INTO chats 
+messageStore.StoreChat     //INSERT OR REPLACE INTO chats
 messageStore.StoreMessage  //INSERT OR REPLACE INTO messages
 
 
@@ -920,8 +918,8 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 "go.mau.fi/whatsmeow/store/sqlstore"
 
 container, err := sqlstore.New(context.Background(), "sqlite3", "file:store/whatsapp.db?_foreign_keys=on", dbLog)
-	
-deviceStore, err := container.GetFirstDevice(context.Background())	
+
+deviceStore, err := container.GetFirstDevice(context.Background())
 
 client := whatsmeow.NewClient(deviceStore, logger)
 */
@@ -934,7 +932,7 @@ func main() {
 		logger.Errorf("Failed to create store directory: %v", err)
 		return
 	}
-	
+
 	//"go.mau.fi/whatsmeow/store/sqlstore"
 	//store/whatsapp.db
 	// container, err := sqlstore.New("sqlite3", "file:store/whatsapp.db?_foreign_keys=on", dbLog)
@@ -962,17 +960,16 @@ func main() {
 		return
 	}
 
+	/*
+		type MessageStore struct {
+			db *sql.DB
+		}
 
-    /*
-	type MessageStore struct {
-		db *sql.DB
-	}
-	
-	Initialize DB message store   "messages.db"   tab,chats  
-    */
+		Initialize DB message store   "messages.db"   tab,chats
+	*/
 
 	//NewMessageStore
-	messageStore, err := NewMessageStore()//*sql.DB
+	messageStore, err := NewMessageStore() //*sql.DB
 	if err != nil {
 		logger.Errorf("Failed to initialize message store: %v", err)
 		return
@@ -1049,7 +1046,7 @@ func GetChatName(client *whatsmeow.Client, messageStore *MessageStore, jid types
 	var name string
 	if jid.Server == "g.us" {
 		// Group chat logic...
-		groupInfo, err := client.GetGroupInfo(jid)
+		groupInfo, err := client.GetGroupInfo(context.Background(), jid)
 		if err == nil && groupInfo.Name != "" {
 			name = groupInfo.Name
 		} else {

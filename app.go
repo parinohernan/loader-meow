@@ -41,7 +41,7 @@ func (a *App) startup(ctx context.Context) {
 // InitWhatsApp inicializa el servicio de WhatsApp
 func (a *App) InitWhatsApp() error {
 	runtime.LogInfo(a.ctx, "Inicializando WhatsApp...")
-	
+
 	waService, err := NewWhatsAppService()
 	if err != nil {
 		return fmt.Errorf("failed to create WhatsApp service: %v", err)
@@ -70,7 +70,7 @@ func (a *App) InitWhatsApp() error {
 	waService.onConnected = func() {
 		runtime.LogInfo(a.ctx, "Conectado a WhatsApp!")
 		runtime.EventsEmit(a.ctx, "connected")
-		
+
 		// Procesamiento automático desactivado - ahora es manual
 		// waService.StartAutoProcessor()
 	}
@@ -81,6 +81,15 @@ func (a *App) InitWhatsApp() error {
 		runtime.EventsEmit(a.ctx, "qr-code", qr)
 	}
 
+	waService.onAuthenticated = func() {
+		runtime.LogInfo(a.ctx, "Autenticado vía QR")
+		runtime.EventsEmit(a.ctx, "authenticated")
+	}
+
+	waService.onLoggedOut = func(reason string) {
+		runtime.LogInfo(a.ctx, fmt.Sprintf("Sesión cerrada: %s", reason))
+		runtime.EventsEmit(a.ctx, "logged-out", reason)
+	}
 
 	return nil
 }
@@ -92,26 +101,10 @@ func (a *App) ConnectWhatsApp() error {
 	}
 
 	runtime.LogInfo(a.ctx, "Conectando a WhatsApp...")
-	
+
 	err := a.waService.Connect()
 	if err != nil {
 		return fmt.Errorf("failed to connect: %v", err)
-	}
-
-	// Si necesita QR, escuchar el canal
-	if !a.waService.IsLoggedIn() {
-		go func() {
-			for evt := range a.waService.qrChan {
-				if evt.Event == "code" {
-					runtime.LogInfo(a.ctx, "QR Code recibido")
-					runtime.EventsEmit(a.ctx, "qr-code", evt.Code)
-				} else if evt.Event == "success" {
-					runtime.LogInfo(a.ctx, "Autenticación exitosa!")
-					runtime.EventsEmit(a.ctx, "authenticated")
-					break
-				}
-			}
-		}()
 	}
 
 	// Esperar un momento para que se establezca la conexión
@@ -134,6 +127,21 @@ func (a *App) IsLoggedIn() bool {
 		return false
 	}
 	return a.waService.IsLoggedIn()
+}
+
+// LogoutWhatsApp cierra la sesión actual y limpia la información local
+func (a *App) LogoutWhatsApp() error {
+	if a.waService == nil {
+		return fmt.Errorf("WhatsApp service not initialized")
+	}
+
+	runtime.LogInfo(a.ctx, "Cerrando sesión de WhatsApp...")
+
+	if err := a.waService.Logout(); err != nil {
+		return fmt.Errorf("failed to logout: %v", err)
+	}
+
+	return nil
 }
 
 // GetChats obtiene la lista de chats
@@ -253,12 +261,12 @@ func (a *App) GetSendersForAssociation() ([]SenderInfoResponse, error) {
 	if a.waService == nil {
 		return nil, fmt.Errorf("WhatsApp service not initialized")
 	}
-	
+
 	senders, err := a.waService.GetSendersForAssociation()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Convertir a SenderInfoResponse para el frontend
 	response := make([]SenderInfoResponse, len(senders))
 	for i, sender := range senders {
@@ -271,7 +279,7 @@ func (a *App) GetSendersForAssociation() ([]SenderInfoResponse, error) {
 			LastGroupName: sender.LastGroupName,
 		}
 	}
-	
+
 	return response, nil
 }
 
@@ -280,7 +288,7 @@ func (a *App) SavePhoneAssociation(senderPhone, realPhone, displayName string) e
 	if a.waService == nil {
 		return fmt.Errorf("WhatsApp service not initialized")
 	}
-	
+
 	return a.waService.SavePhoneAssociation(senderPhone, realPhone, displayName)
 }
 
@@ -289,7 +297,7 @@ func (a *App) DeletePhoneAssociation(senderPhone string) error {
 	if a.waService == nil {
 		return fmt.Errorf("WhatsApp service not initialized")
 	}
-	
+
 	return a.waService.DeletePhoneAssociation(senderPhone)
 }
 
@@ -300,7 +308,7 @@ func (a *App) ProcessMessages(limit int) ([]ProcessingResult, error) {
 	if a.messageProcessor == nil {
 		return nil, fmt.Errorf("message processor not initialized")
 	}
-	
+
 	return a.messageProcessor.ProcessPendingMessages(limit)
 }
 
@@ -309,7 +317,7 @@ func (a *App) GetProcessingResults(limit int) ([]ProcessingResult, error) {
 	if a.messageProcessor == nil {
 		return nil, fmt.Errorf("message processor not initialized")
 	}
-	
+
 	return a.messageProcessor.GetProcessingResults(limit)
 }
 
@@ -318,7 +326,7 @@ func (a *App) GetProcessableMessagesCount() (int, error) {
 	if a.messageProcessor == nil {
 		return 0, fmt.Errorf("message processor not initialized")
 	}
-	
+
 	return a.messageProcessor.GetProcessableMessagesCount()
 }
 
@@ -327,7 +335,7 @@ func (a *App) GetProcessingStats() (map[string]interface{}, error) {
 	if a.messageProcessor == nil {
 		return nil, fmt.Errorf("message processor not initialized")
 	}
-	
+
 	return a.messageProcessor.GetProcessingStats()
 }
 
@@ -338,12 +346,12 @@ func (a *App) GetGeminiKeys() ([]GeminiKey, error) {
 	if a.waService == nil || a.waService.messageProcessor == nil {
 		return []GeminiKey{}, nil
 	}
-	
+
 	keysManager, err := NewAPIKeysManager()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return keysManager.GetAllGeminiKeys(), nil
 }
 
@@ -353,7 +361,7 @@ func (a *App) AddGeminiKey(key, name string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	return keysManager.AddGeminiKey(key, name)
 }
 
@@ -363,7 +371,7 @@ func (a *App) SetActiveGeminiKey(index int) error {
 	if err != nil {
 		return err
 	}
-	
+
 	return keysManager.SetActiveKey(index)
 }
 
@@ -373,7 +381,7 @@ func (a *App) RemoveGeminiKey(index int) error {
 	if err != nil {
 		return err
 	}
-	
+
 	return keysManager.RemoveGeminiKey(index)
 }
 
@@ -383,7 +391,7 @@ func (a *App) GetAPIKeysConfig() (*APIKeysConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return keysManager.GetConfig(), nil
 }
 
@@ -394,7 +402,7 @@ func (a *App) ReprocessMessage(messageID, chatJID string) error {
 	if a.waService == nil {
 		return fmt.Errorf("WhatsApp service not initialized")
 	}
-	
+
 	return a.waService.messageStore.ResetProcessingAttempts(messageID, chatJID)
 }
 
@@ -403,7 +411,7 @@ func (a *App) DeleteMessage(messageID, chatJID string) error {
 	if a.waService == nil {
 		return fmt.Errorf("WhatsApp service not initialized")
 	}
-	
+
 	return a.waService.messageStore.DeleteMessage(messageID, chatJID)
 }
 
@@ -412,7 +420,7 @@ func (a *App) UpdateMessageContent(messageID, chatJID, newContent string) error 
 	if a.waService == nil {
 		return fmt.Errorf("WhatsApp service not initialized")
 	}
-	
+
 	return a.waService.messageStore.UpdateMessageContent(messageID, chatJID, newContent)
 }
 
@@ -421,20 +429,20 @@ func (a *App) GetMessageDetails(messageID, chatJID string) (*ChatMessage, error)
 	if a.waService == nil {
 		return nil, fmt.Errorf("WhatsApp service not initialized")
 	}
-	
+
 	// Obtener el mensaje de la base de datos
 	messages, err := a.waService.messageStore.GetMessages(chatJID, 1000)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Buscar el mensaje específico
 	for _, msg := range messages {
 		if msg.ID == messageID {
 			return &msg, nil
 		}
 	}
-	
+
 	return nil, fmt.Errorf("message not found")
 }
 
@@ -443,7 +451,7 @@ func (a *App) GetUnprocessedMessagesWithRealPhone(limit int) ([]ProcessableMessa
 	if a.waService == nil {
 		return nil, fmt.Errorf("WhatsApp service not initialized")
 	}
-	
+
 	return a.waService.messageStore.GetUnprocessedMessagesWithRealPhone(limit)
 }
 
@@ -468,12 +476,9 @@ func (a *App) ProcessSingleMessage(messageID, chatJID string) (ProcessingResult,
 	if a.messageProcessor == nil {
 		return ProcessingResult{}, fmt.Errorf("message processor not initialized")
 	}
-	
+
 	return a.messageProcessor.ProcessSingleMessage(messageID, chatJID)
 }
-
-
-
 
 // ===================================
 // Gestión de Configuraciones del Sistema
@@ -600,13 +605,13 @@ func (a *App) TestAIConfig(configID int) (map[string]interface{}, error) {
 	if a.waService == nil || a.waService.aiConfigManager == nil {
 		return nil, fmt.Errorf("AI config manager not initialized")
 	}
-	
+
 	// Obtener la configuración
 	configs, err := a.waService.aiConfigManager.GetAllConfigs()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var testConfig *AIConfigDB
 	for _, c := range configs {
 		if c.ID == configID {
@@ -614,43 +619,43 @@ func (a *App) TestAIConfig(configID int) (map[string]interface{}, error) {
 			break
 		}
 	}
-	
+
 	if testConfig == nil {
 		return nil, fmt.Errorf("config not found")
 	}
-	
+
 	// Mensaje de prueba simple
 	testMessage := "Hola, este es un mensaje de prueba para verificar la configuración de IA."
-	
+
 	startTime := time.Now()
-	
+
 	// Intentar procesar con el proveedor específico
 	providerService := NewAIProviderService(a.waService.aiConfigManager)
-	
+
 	// Temporalmente activar esta config para la prueba
 	originalActive, _ := a.waService.aiConfigManager.GetActiveConfig()
 	a.waService.aiConfigManager.SetActiveConfig(configID)
-	
+
 	_, err = providerService.ProcessMessage("Eres un asistente de prueba.", testMessage, "test")
-	
+
 	// Restaurar configuración original
 	if originalActive != nil {
 		a.waService.aiConfigManager.SetActiveConfig(originalActive.ID)
 	}
-	
+
 	elapsed := time.Since(startTime).Seconds()
-	
+
 	result := map[string]interface{}{
-		"success": err == nil,
-		"elapsed": elapsed,
+		"success":  err == nil,
+		"elapsed":  elapsed,
 		"provider": testConfig.ProviderDisplay,
-		"model": testConfig.ModelDisplay,
+		"model":    testConfig.ModelDisplay,
 	}
-	
+
 	if err != nil {
 		result["error"] = err.Error()
 	}
-	
+
 	return result, nil
 }
 

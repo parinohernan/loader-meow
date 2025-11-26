@@ -199,6 +199,14 @@ func (p *MessageProcessor) processMessage(msg ProcessableMessage) ProcessingResu
 		result.Status = "success"
 		result.ErrorMessage = "No hay información de carga válida en el mensaje (array vacío)"
 		p.logger.Infof("Mensaje %s: No contiene información de carga válida (array vacío)", msg.ID)
+		
+		// Actualizar perfil: probablemente es un camionero buscando carga (-1 confianza)
+		if err := p.messageStore.UpdatePhoneProfiling(msg.RealPhone, false); err != nil {
+			p.logger.Warnf("Error actualizando perfil para %s: %v", msg.RealPhone, err)
+		} else {
+			p.logger.Infof("📉 Perfil actualizado: %s (-1 confianza, posible camionero)", msg.RealPhone)
+		}
+		
 		return result
 	}
 	
@@ -228,6 +236,13 @@ func (p *MessageProcessor) processMessage(msg ProcessableMessage) ProcessingResu
 	result.Status = "success"
 	p.logger.Infof("Mensaje %s procesado exitosamente: %d cargas creadas", msg.ID, len(supabaseIDs))
 	p.logger.Infof("🟢 PROCESAMIENTO FINALIZADO EXITOSAMENTE para mensaje %s", msg.ID)
+	
+	// Actualizar perfil: carga válida procesada exitosamente (+1 confianza)
+	if err := p.messageStore.UpdatePhoneProfiling(msg.RealPhone, true); err != nil {
+		p.logger.Warnf("Error actualizando perfil para %s: %v", msg.RealPhone, err)
+	} else {
+		p.logger.Infof("📈 Perfil actualizado: %s (+1 confianza, loader confirmado)", msg.RealPhone)
+	}
 	
 	return result
 }
@@ -442,6 +457,10 @@ func (p *MessageProcessor) validateLocations(jsonData []byte) error {
 	argentineCitiesWithCountryNames := []string{
 		"concepción del uruguay",  // Entre Ríos, Argentina
 		"concepcion del uruguay",
+		"chilecito",               // La Rioja, Argentina (contiene "chile")
+		"perúgorría",              // Corrientes, Argentina (contiene "perú")
+		"perugorria",              // Corrientes, Argentina (sin tilde)
+		"perugorría",              // Corrientes, Argentina (variante)
 		// Agregar más excepciones aquí si es necesario
 	}
 	
