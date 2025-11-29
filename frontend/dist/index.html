@@ -1100,6 +1100,72 @@
         background: #c82333;
       }
 
+      .view-messages-btn {
+        background: #0084ff;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 6px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: background 0.3s ease;
+        margin-left: 5px;
+      }
+
+      .view-messages-btn:hover {
+        background: #0066cc;
+      }
+
+      .messages-preview-row {
+        background: #111b21;
+      }
+
+      .message-preview-item {
+        background: #202c33;
+        border-left: 3px solid #25d366;
+        padding: 12px;
+        margin-bottom: 10px;
+        border-radius: 4px;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+      }
+
+      .message-preview-content {
+        flex: 1;
+        color: #e9edef;
+        font-size: 13px;
+        line-height: 1.4;
+        word-wrap: break-word;
+        margin-right: 15px;
+      }
+
+      .message-preview-meta {
+        color: #8696a0;
+        font-size: 11px;
+        margin-top: 5px;
+      }
+
+      .message-preview-actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      .delete-message-btn {
+        background: #dc3545;
+        color: white;
+        border: none;
+        padding: 6px 12px;
+        border-radius: 4px;
+        font-size: 11px;
+        cursor: pointer;
+        transition: background 0.3s ease;
+      }
+
+      .delete-message-btn:hover {
+        background: #c82333;
+      }
+
       .message-count {
         background: #25d366;
         color: white;
@@ -2866,7 +2932,25 @@
                   sender.real_phone
                     ? `
                   <button class="delete-btn" onclick="deleteAssociation('${sender.sender_phone}')">
-                    🗑️ Eliminar
+                    🗑️ Eliminar Asociación
+                  </button>
+                `
+                    : ""
+                }
+                ${
+                  sender.message_count > 0
+                    ? `
+                  <button class="view-messages-btn" onclick="toggleMessagesPreview('${sender.sender_phone}')" id="toggleBtn_${sender.sender_phone}">
+                    👁️ Ver Mensajes
+                  </button>
+                `
+                    : ""
+                }
+                ${
+                  !sender.real_phone && sender.message_count > 0
+                    ? `
+                  <button class="delete-btn" onclick="deleteAllMessagesAndDiscard('${sender.sender_phone}')" title="Eliminar todos los mensajes y descartar este contacto">
+                    🗑️ Eliminar Todo
                   </button>
                 `
                     : ""
@@ -2874,6 +2958,24 @@
               </td>
             `;
             tbody.appendChild(row);
+            
+            // Agregar fila expandible para mensajes (inicialmente oculta)
+            if (sender.message_count > 0) {
+              const messagesRow = document.createElement("tr");
+              messagesRow.id = `messagesRow_${sender.sender_phone}`;
+              messagesRow.style.display = "none";
+              messagesRow.className = "messages-preview-row";
+              messagesRow.innerHTML = `
+                <td colspan="7" style="padding: 20px; background: #111b21;">
+                  <div id="messagesContent_${sender.sender_phone}" style="max-height: 400px; overflow-y: auto;">
+                    <div style="text-align: center; color: #8696a0; padding: 20px;">
+                      Cargando mensajes...
+                    </div>
+                  </div>
+                </td>
+              `;
+              tbody.appendChild(messagesRow);
+            }
           });
         });
       }
@@ -2941,6 +3043,162 @@
             "Error al eliminar asociación: " + errorMsg,
             "error"
           );
+        }
+      }
+
+      async function toggleMessagesPreview(senderPhone) {
+        const messagesRow = document.getElementById(`messagesRow_${senderPhone}`);
+        const toggleBtn = document.getElementById(`toggleBtn_${senderPhone}`);
+        const messagesContent = document.getElementById(`messagesContent_${senderPhone}`);
+        
+        if (!messagesRow || !toggleBtn || !messagesContent) {
+          return;
+        }
+        
+        // Si está oculto, mostrar y cargar mensajes
+        if (messagesRow.style.display === "none") {
+          messagesRow.style.display = "";
+          toggleBtn.textContent = "👁️ Ocultar Mensajes";
+          
+          // Cargar mensajes si aún no se han cargado
+          if (messagesContent.innerHTML.includes("Cargando mensajes...") || messagesContent.innerHTML.trim() === "") {
+            await loadMessagesForSender(senderPhone);
+          }
+        } else {
+          messagesRow.style.display = "none";
+          toggleBtn.textContent = "👁️ Ver Mensajes";
+        }
+      }
+
+      async function loadMessagesForSender(senderPhone) {
+        const messagesContent = document.getElementById(`messagesContent_${senderPhone}`);
+        if (!messagesContent) return;
+        
+        try {
+          messagesContent.innerHTML = '<div style="text-align: center; color: #8696a0; padding: 20px;">Cargando mensajes...</div>';
+          
+          const messages = await window.go.main.App.GetMessagesBySenderPhone(senderPhone, 20);
+          
+          if (!messages || messages.length === 0) {
+            messagesContent.innerHTML = '<div style="text-align: center; color: #8696a0; padding: 20px;">No hay mensajes disponibles</div>';
+            return;
+          }
+          
+          let html = '<div style="display: flex; flex-direction: column; gap: 10px;">';
+          
+          messages.forEach((msg) => {
+            const date = new Date(msg.timestamp);
+            const dateStr = date.toLocaleString('es-AR', {
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit'
+            });
+            
+            // Truncar contenido si es muy largo
+            let content = msg.content || "(Sin contenido)";
+            if (content.length > 300) {
+              content = content.substring(0, 300) + "...";
+            }
+            
+            html += `
+              <div class="message-preview-item">
+                <div class="message-preview-content">
+                  <div>${escapeHtml(content)}</div>
+                  <div class="message-preview-meta">
+                    📅 ${dateStr} | 💬 ${msg.chat_jid || "Sin chat"}
+                  </div>
+                </div>
+                <div class="message-preview-actions">
+                  <button class="delete-message-btn" onclick="deleteMessageAndAssociation('${msg.id}', '${msg.chat_jid}', '${senderPhone}')" title="Eliminar mensaje y descartar asociación">
+                    🗑️ Eliminar
+                  </button>
+                </div>
+              </div>
+            `;
+          });
+          
+          html += '</div>';
+          messagesContent.innerHTML = html;
+          
+        } catch (error) {
+          console.error("Error loading messages:", error);
+          messagesContent.innerHTML = `<div style="text-align: center; color: #dc3545; padding: 20px;">Error al cargar mensajes: ${error.message}</div>`;
+        }
+      }
+
+      function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
+
+      async function deleteMessageAndAssociation(messageID, chatJID, senderPhone) {
+        if (!confirm("¿Estás seguro de que quieres eliminar este mensaje y descartar la asociación?\n\nEsta acción eliminará el mensaje de la base de datos y también eliminará la asociación de teléfono.")) {
+          return;
+        }
+        
+        try {
+          // Eliminar el mensaje
+          await window.go.main.App.DeleteMessage(messageID, chatJID);
+          
+          // Eliminar la asociación
+          try {
+            await window.go.main.App.DeletePhoneAssociation(senderPhone);
+          } catch (assocError) {
+            console.warn("Error eliminando asociación (puede que no exista):", assocError);
+          }
+          
+          showNotification("✅ Mensaje y asociación eliminados correctamente", "success");
+          
+          // Ocultar la vista previa de mensajes
+          const messagesRow = document.getElementById(`messagesRow_${senderPhone}`);
+          const toggleBtn = document.getElementById(`toggleBtn_${senderPhone}`);
+          if (messagesRow) messagesRow.style.display = "none";
+          if (toggleBtn) toggleBtn.textContent = "👁️ Ver Mensajes";
+          
+          // Recargar los datos de asociaciones
+          await loadAssociations();
+          
+        } catch (error) {
+          console.error("Error deleting message and association:", error);
+          const errorMsg = error?.message || error?.toString() || "Error desconocido";
+          showNotification("Error al eliminar: " + errorMsg, "error");
+        }
+      }
+
+      async function deleteAllMessagesAndDiscard(senderPhone) {
+        if (!confirm("¿Estás seguro de que quieres eliminar TODOS los mensajes de este contacto y descartarlo?\n\nEsta acción eliminará todos los mensajes de la base de datos y también eliminará cualquier asociación de teléfono existente.\n\nEsta acción NO se puede deshacer.")) {
+          return;
+        }
+        
+        try {
+          // Eliminar todos los mensajes del remitente
+          await window.go.main.App.DeleteMessagesBySenderPhone(senderPhone);
+          
+          // Eliminar la asociación si existe
+          try {
+            await window.go.main.App.DeletePhoneAssociation(senderPhone);
+          } catch (assocError) {
+            console.warn("Error eliminando asociación (puede que no exista):", assocError);
+          }
+          
+          showNotification("✅ Todos los mensajes y asociación eliminados correctamente", "success");
+          
+          // Ocultar la vista previa de mensajes si está abierta
+          const messagesRow = document.getElementById(`messagesRow_${senderPhone}`);
+          const toggleBtn = document.getElementById(`toggleBtn_${senderPhone}`);
+          if (messagesRow) messagesRow.style.display = "none";
+          if (toggleBtn) toggleBtn.textContent = "👁️ Ver Mensajes";
+          
+          // Recargar los datos de asociaciones
+          await loadAssociations();
+          
+        } catch (error) {
+          console.error("Error deleting all messages:", error);
+          const errorMsg = error?.message || error?.toString() || "Error desconocido";
+          showNotification("Error al eliminar: " + errorMsg, "error");
         }
       }
 

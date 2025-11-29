@@ -411,6 +411,38 @@ func (store *MessageStore) GetMessages(chatJID string, limit int) ([]ChatMessage
 	return messages, nil
 }
 
+// GetMessagesBySenderPhone obtiene mensajes de un remitente específico
+func (store *MessageStore) GetMessagesBySenderPhone(senderPhone string, limit int) ([]ChatMessage, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	
+	rows, err := store.db.Query(
+		`SELECT id, chat_jid, sender_phone, sender_name, content, timestamp, is_from_me, media_type, filename, processed 
+		FROM messages 
+		WHERE sender_phone = ? 
+		ORDER BY timestamp DESC 
+		LIMIT ?`,
+		senderPhone, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var messages []ChatMessage
+	for rows.Next() {
+		var msg ChatMessage
+		err := rows.Scan(&msg.ID, &msg.ChatJID, &msg.SenderPhone, &msg.SenderName, &msg.Content, &msg.Timestamp, &msg.IsFromMe, &msg.MediaType, &msg.Filename, &msg.Processed)
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, msg)
+	}
+
+	return messages, nil
+}
+
 // GetUnprocessedMessages obtiene todos los mensajes no procesados
 func (store *MessageStore) GetUnprocessedMessages(limit int) ([]ChatMessage, error) {
 	rows, err := store.db.Query(
@@ -488,6 +520,13 @@ func (store *MessageStore) GetProcessableMessages(limit int) ([]ProcessableMessa
 		  AND pa.real_phone IS NOT NULL
 		  AND pa.real_phone != ''
 		  AND (m.processing_attempts < 3 OR m.processing_attempts IS NULL)
+		  -- Filtrar mensajes de texto cortos (menos de 20 caracteres) para descongestionar la API
+		  -- Solo aplicar este filtro a mensajes de texto (sin media_type o media_type vacío)
+		  AND (
+		       (m.media_type IS NOT NULL AND m.media_type != '') 
+		       OR 
+		       (m.media_type IS NULL OR m.media_type = '') AND LENGTH(m.content) >= 20
+		  )
 		ORDER BY m.timestamp ASC
 		LIMIT ?
 	`
@@ -522,6 +561,13 @@ func (store *MessageStore) GetProcessableMessagesCount() (int, error) {
 		  AND m.content != ''
 		  AND pa.real_phone IS NOT NULL
 		  AND pa.real_phone != ''
+		  -- Filtrar mensajes de texto cortos (menos de 20 caracteres) para descongestionar la API
+		  -- Solo aplicar este filtro a mensajes de texto (sin media_type o media_type vacío)
+		  AND (
+		       (m.media_type IS NOT NULL AND m.media_type != '') 
+		       OR 
+		       (m.media_type IS NULL OR m.media_type = '') AND LENGTH(m.content) >= 20
+		  )
 	`
 
 	var count int
@@ -545,6 +591,13 @@ func (store *MessageStore) GetUnprocessedMessagesWithRealPhone(limit int) ([]Pro
 		  AND m.content != ''
 		  AND pa.real_phone IS NOT NULL
 		  AND pa.real_phone != ''
+		  -- Filtrar mensajes de texto cortos (menos de 20 caracteres) para descongestionar la API
+		  -- Solo aplicar este filtro a mensajes de texto (sin media_type o media_type vacío)
+		  AND (
+		       (m.media_type IS NOT NULL AND m.media_type != '') 
+		       OR 
+		       (m.media_type IS NULL OR m.media_type = '') AND LENGTH(m.content) >= 20
+		  )
 		ORDER BY m.timestamp DESC
 		LIMIT ?
 	`
@@ -624,6 +677,15 @@ func (store *MessageStore) DeleteMessage(messageID, chatJID string) error {
 	_, err := store.db.Exec(
 		`DELETE FROM messages WHERE id = ? AND chat_jid = ?`,
 		messageID, chatJID,
+	)
+	return err
+}
+
+// DeleteMessagesBySenderPhone elimina todos los mensajes de un remitente específico
+func (store *MessageStore) DeleteMessagesBySenderPhone(senderPhone string) error {
+	_, err := store.db.Exec(
+		`DELETE FROM messages WHERE sender_phone = ?`,
+		senderPhone,
 	)
 	return err
 }
@@ -1557,6 +1619,24 @@ func (s *WhatsAppService) DeletePhoneAssociation(senderPhone string) error {
 
 	s.logger.Infof("🗑️ Asociación eliminada: %s", senderPhone)
 	return nil
+}
+
+// GetMessagesBySenderPhone obtiene mensajes de un remitente específico
+func (s *WhatsAppService) GetMessagesBySenderPhone(senderPhone string, limit int) ([]ChatMessage, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	return s.messageStore.GetMessagesBySenderPhone(senderPhone, limit)
+}
+
+// DeleteMessage elimina un mensaje de la base de datos
+func (s *WhatsAppService) DeleteMessage(messageID, chatJID string) error {
+	return s.messageStore.DeleteMessage(messageID, chatJID)
+}
+
+// DeleteMessagesBySenderPhone elimina todos los mensajes de un remitente específico
+func (s *WhatsAppService) DeleteMessagesBySenderPhone(senderPhone string) error {
+	return s.messageStore.DeleteMessagesBySenderPhone(senderPhone)
 }
 
 // GetRealPhone obtiene el número real asociado a un sender_phone

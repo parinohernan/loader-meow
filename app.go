@@ -13,6 +13,7 @@ import (
 type App struct {
 	ctx              context.Context
 	waService        *WhatsAppService
+	facebookService  *FacebookService
 	messageProcessor *MessageProcessor
 	qrCode           string
 }
@@ -301,6 +302,37 @@ func (a *App) DeletePhoneAssociation(senderPhone string) error {
 	return a.waService.DeletePhoneAssociation(senderPhone)
 }
 
+// GetMessagesBySenderPhone obtiene mensajes de un remitente específico
+func (a *App) GetMessagesBySenderPhone(senderPhone string, limit int) ([]ChatMessage, error) {
+	if a.waService == nil {
+		return nil, fmt.Errorf("WhatsApp service not initialized")
+	}
+
+	if limit <= 0 {
+		limit = 50
+	}
+
+	return a.waService.GetMessagesBySenderPhone(senderPhone, limit)
+}
+
+// DeleteMessage elimina un mensaje de la base de datos
+func (a *App) DeleteMessage(messageID, chatJID string) error {
+	if a.waService == nil {
+		return fmt.Errorf("WhatsApp service not initialized")
+	}
+
+	return a.waService.DeleteMessage(messageID, chatJID)
+}
+
+// DeleteMessagesBySenderPhone elimina todos los mensajes de un remitente específico
+func (a *App) DeleteMessagesBySenderPhone(senderPhone string) error {
+	if a.waService == nil {
+		return fmt.Errorf("WhatsApp service not initialized")
+	}
+
+	return a.waService.DeleteMessagesBySenderPhone(senderPhone)
+}
+
 // ===== FUNCIONES PARA PROCESAMIENTO CON IA =====
 
 // ProcessMessages procesa mensajes pendientes con IA
@@ -404,15 +436,6 @@ func (a *App) ReprocessMessage(messageID, chatJID string) error {
 	}
 
 	return a.waService.messageStore.ResetProcessingAttempts(messageID, chatJID)
-}
-
-// DeleteMessage elimina un mensaje de la base de datos
-func (a *App) DeleteMessage(messageID, chatJID string) error {
-	if a.waService == nil {
-		return fmt.Errorf("WhatsApp service not initialized")
-	}
-
-	return a.waService.messageStore.DeleteMessage(messageID, chatJID)
 }
 
 // UpdateMessageContent actualiza el contenido de un mensaje
@@ -664,6 +687,122 @@ func (a *App) Disconnect() {
 	if a.waService != nil {
 		a.waService.Disconnect()
 	}
+}
+
+// ===== FUNCIONES PARA FACEBOOK =====
+
+// InitFacebook inicializa el servicio de Facebook
+func (a *App) InitFacebook() error {
+	runtime.LogInfo(a.ctx, "Inicializando Facebook...")
+	
+	// Verificar que WhatsApp service esté inicializado (para acceder a messageStore)
+	if a.waService == nil || a.waService.messageStore == nil {
+		return fmt.Errorf("WhatsApp service not initialized. Initialize WhatsApp first")
+	}
+	
+	// Cargar token de acceso
+	accessToken, err := LoadFacebookConfig()
+	if err != nil {
+		runtime.LogWarning(a.ctx, fmt.Sprintf("Facebook token not found: %v. You can add groups but they won't fetch posts until token is configured.", err))
+		// Crear servicio con token vacío, se puede configurar después
+		accessToken = ""
+	}
+	
+	facebookService := NewFacebookService(accessToken, a.waService.messageStore)
+	a.facebookService = facebookService
+	
+	runtime.LogInfo(a.ctx, "Facebook service initialized")
+	return nil
+}
+
+// AddFacebookGroup agrega un nuevo grupo de Facebook
+func (a *App) AddFacebookGroup(groupID, groupName, customAccessToken string) error {
+	if a.facebookService == nil {
+		return fmt.Errorf("Facebook service not initialized. Call InitFacebook first")
+	}
+	
+	return a.facebookService.AddGroup(groupID, groupName, customAccessToken)
+}
+
+// RemoveFacebookGroup elimina un grupo de Facebook
+func (a *App) RemoveFacebookGroup(groupID string) error {
+	if a.facebookService == nil {
+		return fmt.Errorf("Facebook service not initialized")
+	}
+	
+	return a.facebookService.RemoveGroup(groupID)
+}
+
+// GetFacebookGroups obtiene todos los grupos de Facebook configurados
+func (a *App) GetFacebookGroups() ([]FacebookGroup, error) {
+	if a.facebookService == nil {
+		return []FacebookGroup{}, nil
+	}
+	
+	return a.facebookService.GetGroups(), nil
+}
+
+// ToggleFacebookGroup habilita/deshabilita un grupo de Facebook
+func (a *App) ToggleFacebookGroup(groupID string, enabled bool) error {
+	if a.facebookService == nil {
+		return fmt.Errorf("Facebook service not initialized")
+	}
+	
+	return a.facebookService.ToggleGroup(groupID, enabled)
+}
+
+// FetchFacebookGroupPosts obtiene publicaciones de un grupo específico
+func (a *App) FetchFacebookGroupPosts(groupID string, limit int) error {
+	if a.facebookService == nil {
+		return fmt.Errorf("Facebook service not initialized")
+	}
+	
+	runtime.LogInfo(a.ctx, fmt.Sprintf("Obteniendo publicaciones del grupo %s...", groupID))
+	
+	err := a.facebookService.FetchAndStorePosts(groupID, limit)
+	if err != nil {
+		runtime.LogError(a.ctx, fmt.Sprintf("Error obteniendo publicaciones: %v", err))
+		return err
+	}
+	
+	runtime.LogInfo(a.ctx, fmt.Sprintf("Publicaciones del grupo %s obtenidas exitosamente", groupID))
+	return nil
+}
+
+// FetchAllFacebookGroupsPosts obtiene publicaciones de todos los grupos habilitados
+func (a *App) FetchAllFacebookGroupsPosts(limitPerGroup int) (map[string]string, error) {
+	if a.facebookService == nil {
+		return nil, fmt.Errorf("Facebook service not initialized")
+	}
+	
+	runtime.LogInfo(a.ctx, "Obteniendo publicaciones de todos los grupos...")
+	
+	errors := a.facebookService.FetchAllGroupsPosts(limitPerGroup)
+	
+	// Convertir errores a strings para el frontend
+	result := make(map[string]string)
+	for groupID, err := range errors {
+		if err != nil {
+			result[groupID] = err.Error()
+			runtime.LogError(a.ctx, fmt.Sprintf("Error en grupo %s: %v", groupID, err))
+		} else {
+			result[groupID] = "success"
+			runtime.LogInfo(a.ctx, fmt.Sprintf("Grupo %s procesado exitosamente", groupID))
+		}
+	}
+	
+	return result, nil
+}
+
+// UpdateFacebookAccessToken actualiza el token de acceso de Facebook
+func (a *App) UpdateFacebookAccessToken(accessToken string) error {
+	if a.facebookService == nil {
+		return fmt.Errorf("Facebook service not initialized")
+	}
+	
+	a.facebookService.accessToken = accessToken
+	runtime.LogInfo(a.ctx, "Token de Facebook actualizado")
+	return nil
 }
 
 // shutdown se llama cuando la app se cierra
