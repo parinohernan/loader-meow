@@ -371,6 +371,20 @@ func (a *App) GetProcessingStats() (map[string]interface{}, error) {
 	return a.messageProcessor.GetProcessingStats()
 }
 
+// SimulateMessage procesa un mensaje sin guardarlo (para simulador)
+func (a *App) SimulateMessage(messageContent, realPhone string) (ProcessingResult, error) {
+	if a.messageProcessor == nil {
+		return ProcessingResult{}, fmt.Errorf("message processor not initialized")
+	}
+
+	if realPhone == "" {
+		realPhone = "+5490000000000" // Teléfono por defecto para simulación
+	}
+
+	result := a.messageProcessor.SimulateMessage(messageContent, realPhone)
+	return result, nil
+}
+
 // ===== FUNCIONES PARA GESTIÓN DE API KEYS =====
 
 // GetGeminiKeys obtiene todas las API keys de Gemini configuradas

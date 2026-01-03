@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -480,13 +481,13 @@ func (s *SupabaseService) buscarUbicacionExacta(direccion string) (string, error
 func (s *SupabaseService) crearUbicacionConGeocoding(direccion string) (string, error) {
 	fmt.Printf("🗺️ Obteniendo coordenadas para: %s\n", direccion)
 	
-	// Obtener coordenadas usando Google Maps API
+	// Obtener coordenadas usando sistema de fallback (Nominatim primero, luego Google)
 	coords, err := s.obtenerCoordenadas(direccion)
 	if err != nil {
 		return "", fmt.Errorf("failed to get coordinates: %v", err)
 	}
 	
-	fmt.Printf("📍 Coordenadas obtenidas: lat=%f, lng=%f\n", coords.Lat, coords.Lng)
+	// Las coordenadas ya fueron logueadas en obtenerCoordenadas
 	
 	// Crear ubicación en Supabase
 	ubicacion := Ubicacion{
@@ -511,8 +512,113 @@ type Coordenadas struct {
 	Lng float64
 }
 
-// obtenerCoordenadas obtiene coordenadas usando Google Maps API
+// obtenerCoordenadas obtiene coordenadas usando sistema de fallback:
+// 1. Primero intenta Nominatim (OpenStreetMap) - gratis
+// 2. Si falla, usa Google Maps API como respaldo
 func (s *SupabaseService) obtenerCoordenadas(direccion string) (*Coordenadas, error) {
+	// Limpiar dirección
+	cleanAddress := strings.TrimSpace(direccion)
+	
+	// 1. Intentar Nominatim primero (gratis, sin API key)
+	fmt.Printf("🌍 [1/2] Intentando geocoding con Nominatim (OpenStreetMap)...\n")
+	coords, err := s.obtenerCoordenadasNominatim(cleanAddress)
+	if err == nil && coords != nil {
+		fmt.Printf("✅ Coordenadas obtenidas con Nominatim: lat=%f, lng=%f\n", coords.Lat, coords.Lng)
+		return coords, nil
+	}
+	
+	fmt.Printf("⚠️ Nominatim falló: %v\n", err)
+	fmt.Printf("🗺️ [2/2] Intentando geocoding con Google Maps como respaldo...\n")
+	
+	// 2. Si Nominatim falla, usar Google Maps como respaldo
+	coords, err = s.obtenerCoordenadasGoogle(cleanAddress)
+	if err != nil {
+		return nil, fmt.Errorf("tanto Nominatim como Google Maps fallaron. Último error: %v", err)
+	}
+	
+	fmt.Printf("✅ Coordenadas obtenidas con Google Maps: lat=%f, lng=%f\n", coords.Lat, coords.Lng)
+	return coords, nil
+}
+
+// obtenerCoordenadasNominatim obtiene coordenadas usando Nominatim (OpenStreetMap)
+// Es gratis, no requiere API key, pero tiene límites de rate (1 req/seg recomendado)
+func (s *SupabaseService) obtenerCoordenadasNominatim(direccion string) (*Coordenadas, error) {
+	// Construir URL de Nominatim
+	baseURL := "https://nominatim.openstreetmap.org/search"
+	params := url.Values{}
+	params.Add("q", direccion)
+	params.Add("countrycodes", "ar") // Solo Argentina
+	params.Add("format", "json")
+	params.Add("limit", "1")
+	params.Add("addressdetails", "1")
+	params.Add("accept-language", "es")
+	
+	requestURL := baseURL + "?" + params.Encode()
+	
+	req, err := http.NewRequest("GET", requestURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %v", err)
+	}
+	
+	// Nominatim requiere User-Agent identificable (política de uso)
+	req.Header.Set("User-Agent", "LoaderMeow/1.0 (Transport Logistics App - https://github.com/parinohernan/loader-meow)")
+	
+	fmt.Printf("   🔗 URL Nominatim: %s\n", requestURL)
+	
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call Nominatim API: %v", err)
+	}
+	defer resp.Body.Close()
+	
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("Nominatim API error: %d - %s", resp.StatusCode, string(body))
+	}
+	
+	var results []struct {
+		Lat         string `json:"lat"`
+		Lon         string `json:"lon"`
+		DisplayName string `json:"display_name"`
+		Address     struct {
+			City     string `json:"city"`
+			Town     string `json:"town"`
+			State    string `json:"state"`
+			Country  string `json:"country"`
+		} `json:"address"`
+	}
+	
+	if err := json.NewDecoder(resp.Body).Decode(&results); err != nil {
+		return nil, fmt.Errorf("failed to decode Nominatim response: %v", err)
+	}
+	
+	if len(results) == 0 {
+		return nil, fmt.Errorf("no geocoding results from Nominatim for: %s", direccion)
+	}
+	
+	result := results[0]
+	lat, err := strconv.ParseFloat(result.Lat, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid latitude from Nominatim: %v", err)
+	}
+	
+	lng, err := strconv.ParseFloat(result.Lon, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid longitude from Nominatim: %v", err)
+	}
+	
+	coords := &Coordenadas{
+		Lat: lat,
+		Lng: lng,
+	}
+	
+	fmt.Printf("   📍 Dirección detectada por Nominatim: %s\n", result.DisplayName)
+	
+	return coords, nil
+}
+
+// obtenerCoordenadasGoogle obtiene coordenadas usando Google Maps API
+func (s *SupabaseService) obtenerCoordenadasGoogle(direccion string) (*Coordenadas, error) {
 	// Obtener API key desde configuración del sistema o fallback
 	var apiKey string
 	var keySource string

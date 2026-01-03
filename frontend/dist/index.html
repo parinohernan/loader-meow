@@ -904,6 +904,46 @@
         background: #d94452;
       }
 
+      /* Estilos para checkboxes de selección múltiple */
+      .message-checkbox {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+        accent-color: #25d366;
+      }
+
+      #selectAllCheckbox {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+        accent-color: #25d366;
+      }
+
+      /* Botón eliminar seleccionados */
+      .btn-danger {
+        background: #f15c6d;
+        color: white;
+        padding: 10px 20px;
+        border: none;
+        border-radius: 6px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.3s ease;
+      }
+
+      .btn-danger:hover:not(:disabled) {
+        background: #d94452;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(241, 92, 109, 0.3);
+      }
+
+      .btn-danger:disabled {
+        background: #5a5a5a;
+        cursor: not-allowed;
+        opacity: 0.6;
+      }
+
       /* Tabs */
       .tabs {
         display: flex;
@@ -2120,6 +2160,178 @@
         display: flex;
       }
 
+      /* === ESTILOS PARA SIMULADOR === */
+      .simulator-panel {
+        display: none;
+        flex-direction: column;
+        background: #0b141a;
+        height: 100vh;
+        width: calc(100% - 140px);
+        overflow-y: auto;
+        overflow-x: hidden;
+        margin-left: 140px;
+        padding: 20px;
+        box-sizing: border-box;
+      }
+
+      .simulator-panel.active {
+        display: flex;
+      }
+
+      .simulator-header {
+        margin-bottom: 30px;
+      }
+
+      .simulator-header h2 {
+        color: #e9edef;
+        margin-bottom: 10px;
+      }
+
+      .simulator-header p {
+        color: #8696a0;
+        font-size: 14px;
+      }
+
+      .simulator-content {
+        display: flex;
+        flex-direction: column;
+        gap: 30px;
+      }
+
+      .simulator-input-section {
+        background: #202c33;
+        padding: 20px;
+        border-radius: 8px;
+      }
+
+      .simulator-textarea {
+        width: 100%;
+        background: #111b21;
+        color: #e9edef;
+        border: 1px solid #374248;
+        border-radius: 6px;
+        padding: 12px;
+        font-size: 14px;
+        font-family: inherit;
+        resize: vertical;
+        min-height: 150px;
+        box-sizing: border-box;
+      }
+
+      .simulator-textarea:focus {
+        outline: none;
+        border-color: #25d366;
+      }
+
+      .simulator-input {
+        width: 100%;
+        background: #111b21;
+        color: #e9edef;
+        border: 1px solid #374248;
+        border-radius: 6px;
+        padding: 12px;
+        font-size: 14px;
+        box-sizing: border-box;
+      }
+
+      .simulator-input:focus {
+        outline: none;
+        border-color: #25d366;
+      }
+
+      .simulator-process-btn {
+        margin-top: 15px;
+        width: 100%;
+        padding: 12px;
+        font-size: 16px;
+      }
+
+      .simulator-results {
+        background: #202c33;
+        padding: 20px;
+        border-radius: 8px;
+      }
+
+      .simulator-results h3 {
+        color: #e9edef;
+        margin-bottom: 20px;
+      }
+
+      .simulator-status {
+        margin-bottom: 20px;
+        padding: 15px;
+        border-radius: 6px;
+        background: #111b21;
+      }
+
+      .simulator-status.success {
+        background: #1e3a2e;
+        border-left: 4px solid #25d366;
+        color: #e9edef;
+      }
+
+      .simulator-status.error {
+        background: #3a1e1e;
+        border-left: 4px solid #f15c6d;
+        color: #e9edef;
+      }
+
+      .simulator-cargas {
+        margin-bottom: 20px;
+      }
+
+      .carga-card {
+        background: #111b21;
+        border-left: 4px solid #25d366;
+        padding: 15px;
+        margin-bottom: 15px;
+        border-radius: 6px;
+      }
+
+      .carga-card h4 {
+        color: #25d366;
+        margin-bottom: 10px;
+        font-size: 16px;
+      }
+
+      .carga-field {
+        display: flex;
+        margin-bottom: 8px;
+        font-size: 14px;
+      }
+
+      .carga-field-label {
+        color: #8696a0;
+        min-width: 150px;
+        font-weight: 500;
+      }
+
+      .carga-field-value {
+        color: #e9edef;
+        flex: 1;
+      }
+
+      .simulator-raw-json {
+        background: #111b21;
+        padding: 15px;
+        border-radius: 6px;
+        margin-top: 20px;
+      }
+
+      .simulator-raw-json h4 {
+        color: #8696a0;
+        margin-bottom: 10px;
+        font-size: 14px;
+      }
+
+      .simulator-raw-json pre {
+        color: #e9edef;
+        font-size: 12px;
+        overflow-x: auto;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+
       .settings-header {
         margin-bottom: 30px;
       }
@@ -2312,6 +2524,9 @@
           <button class="tab" onclick="showTab('settings')">
             🔧 Otras Configuraciones
           </button>
+          <button class="tab" onclick="showTab('simulator')">
+            🧪 Simulador
+          </button>
 
           <div id="sessionMenu" class="session-menu">
             <div class="session-menu-header">
@@ -2483,6 +2698,9 @@
             <table id="processingResultsTable">
               <thead>
                 <tr>
+                  <th id="selectAllHeader" style="width: 40px; display: none;">
+                    <input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()" title="Seleccionar todos">
+                  </th>
                   <th>Fecha</th>
                   <th>Mensaje (con ALT)</th>
                   <th>Remitente</th>
@@ -2495,6 +2713,12 @@
                 <!-- Los datos se cargarán dinámicamente -->
               </tbody>
             </table>
+            <!-- Botón para eliminar seleccionados (solo visible en vista de errores) -->
+            <div id="deleteSelectedContainer" style="display: none; margin-top: 15px; text-align: right;">
+              <button class="btn-danger" onclick="deleteSelectedErrorMessages()" id="deleteSelectedBtn" disabled>
+                🗑️ Eliminar Seleccionados (<span id="selectedCount">0</span>)
+              </button>
+            </div>
           </div>
         </div>
 
@@ -2572,6 +2796,34 @@
             </div>
           </div>
 
+          <!-- Configuración de Nominatim (OpenStreetMap) -->
+          <div class="config-section">
+            <div class="config-section-header">
+              <h3>🌍 Nominatim (OpenStreetMap)</h3>
+              <p class="config-description">Servicio gratuito de geocodificación usado como alternativa a Google Maps</p>
+            </div>
+            <div class="config-form">
+              <div class="form-group">
+                <p style="color: #8696a0; font-size: 13px; margin-bottom: 15px;">
+                  ✅ <strong>Gratis</strong> - No requiere API key<br>
+                  ✅ <strong>Sin límites estrictos</strong> - Recomendado: 1 request/segundo<br>
+                  ✅ <strong>Buena cobertura</strong> de localidades argentinas<br>
+                  ⚠️ Se usa automáticamente antes de Google Maps para ahorrar costos
+                </p>
+              </div>
+              
+              <!-- Prueba de geocodificación con Nominatim -->
+              <div class="test-section">
+                <h4 style="color: #e9edef; font-size: 14px; margin-bottom: 10px;">🧪 Probar Geocodificación Nominatim</h4>
+                <div class="key-input-group" style="margin-bottom: 10px;">
+                  <input type="text" id="testNominatimAddress" placeholder="Ej: Tucumán, Tucumán, Argentina" style="flex: 2;">
+                  <button class="btn-secondary" onclick="testNominatimGeocoding()">🧪 Probar</button>
+                </div>
+                <div id="nominatimTestResult" class="test-result"></div>
+              </div>
+            </div>
+          </div>
+
           <!-- Configuración de Supabase -->
           <div class="config-section">
             <div class="config-section-header">
@@ -2613,6 +2865,48 @@
             </div>
             <div id="configStatus" class="config-status">
               <!-- Se cargará dinámicamente -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Panel de Simulador -->
+        <div id="simulatorPanel" class="simulator-panel">
+          <div class="simulator-header">
+            <h2>🧪 Simulador de Procesamiento</h2>
+            <p>Escribe un mensaje y procesa con IA para ver las cargas detectadas sin guardar en la base de datos</p>
+          </div>
+
+          <div class="simulator-content">
+            <div class="simulator-input-section">
+              <div class="form-group">
+                <label>Mensaje a procesar:</label>
+                <textarea 
+                  id="simulatorMessage" 
+                  class="simulator-textarea" 
+                  placeholder="Escribe aquí el mensaje que quieres procesar con IA..."
+                  rows="8"
+                ></textarea>
+              </div>
+              <div class="form-group">
+                <label>Teléfono Real (opcional):</label>
+                <input 
+                  type="tel" 
+                  id="simulatorPhone" 
+                  class="simulator-input" 
+                  placeholder="+5490000000000"
+                />
+                <small style="color: #8696a0;">Si no se especifica, se usará un teléfono por defecto</small>
+              </div>
+              <button class="btn-primary simulator-process-btn" onclick="processSimulatorMessage()">
+                🤖 Procesar con IA
+              </button>
+            </div>
+
+            <div id="simulatorResults" class="simulator-results" style="display: none;">
+              <h3>📋 Resultados del Procesamiento</h3>
+              <div id="simulatorStatus" class="simulator-status"></div>
+              <div id="simulatorCargas" class="simulator-cargas"></div>
+              <div id="simulatorRawJson" class="simulator-raw-json"></div>
             </div>
           </div>
         </div>
@@ -2698,6 +2992,7 @@
         document.getElementById("processingPanel").classList.remove("active");
         document.getElementById("aiConfigPanel").classList.remove("active");
         document.getElementById("settingsPanel").classList.remove("active");
+        document.getElementById("simulatorPanel").classList.remove("active");
 
         // Remover clase active de todas las pestañas
         document.querySelectorAll(".tab").forEach((tab) => {
@@ -2739,6 +3034,12 @@
             .classList.add("active");
           console.log("Panel de configuraciones del sistema activado");
           loadSystemSettings();
+        } else if (tabName === "simulator") {
+          document.getElementById("simulatorPanel").classList.add("active");
+          document
+            .querySelector(".tab[onclick=\"showTab('simulator')\"]")
+            .classList.add("active");
+          console.log("Panel de simulador activado");
         }
       }
 
@@ -3199,6 +3500,131 @@
           console.error("Error deleting all messages:", error);
           const errorMsg = error?.message || error?.toString() || "Error desconocido";
           showNotification("Error al eliminar: " + errorMsg, "error");
+        }
+      }
+
+      async function processSimulatorMessage() {
+        const messageText = document.getElementById("simulatorMessage").value.trim();
+        const phoneNumber = document.getElementById("simulatorPhone").value.trim();
+        
+        if (!messageText) {
+          showNotification("Por favor ingresa un mensaje para procesar", "error");
+          return;
+        }
+        
+        const resultsDiv = document.getElementById("simulatorResults");
+        const statusDiv = document.getElementById("simulatorStatus");
+        const cargasDiv = document.getElementById("simulatorCargas");
+        const rawJsonDiv = document.getElementById("simulatorRawJson");
+        
+        // Mostrar loading
+        resultsDiv.style.display = "block";
+        statusDiv.innerHTML = '<div style="color: #8696a0;">⏳ Procesando mensaje con IA...</div>';
+        cargasDiv.innerHTML = "";
+        rawJsonDiv.innerHTML = "";
+        
+        try {
+          const result = await window.go.main.App.SimulateMessage(messageText, phoneNumber || "");
+          
+          // Mostrar estado
+          if (result.status === "success") {
+            statusDiv.className = "simulator-status success";
+            statusDiv.innerHTML = `
+              <div style="font-weight: 600; margin-bottom: 5px;">✅ ${result.error_message || "Procesamiento exitoso"}</div>
+              <div style="font-size: 12px; color: #8696a0;">Estado: ${result.status}</div>
+            `;
+            
+            // Parsear respuesta JSON
+            let cargas = [];
+            try {
+              cargas = JSON.parse(result.ai_response || "[]");
+            } catch (e) {
+              console.error("Error parseando JSON:", e);
+              cargas = [];
+            }
+            
+            // Mostrar cargas
+            if (cargas.length > 0) {
+              let cargasHtml = `<h4 style="color: #e9edef; margin-bottom: 15px;">📦 Cargas Detectadas (${cargas.length})</h4>`;
+              
+              cargas.forEach((carga, index) => {
+                cargasHtml += `
+                  <div class="carga-card">
+                    <h4>Carga ${index + 1}</h4>
+                    <div class="carga-field">
+                      <span class="carga-field-label">Material:</span>
+                      <span class="carga-field-value">${carga.material || "N/A"}</span>
+                    </div>
+                    <div class="carga-field">
+                      <span class="carga-field-label">Cantidad:</span>
+                      <span class="carga-field-value">${carga.cantidad || "N/A"}</span>
+                    </div>
+                    <div class="carga-field">
+                      <span class="carga-field-label">Presentación:</span>
+                      <span class="carga-field-value">${carga.presentacion || "N/A"}</span>
+                    </div>
+                    <div class="carga-field">
+                      <span class="carga-field-label">Origen:</span>
+                      <span class="carga-field-value">${carga.localidadCarga || "N/A"}</span>
+                    </div>
+                    <div class="carga-field">
+                      <span class="carga-field-label">Destino:</span>
+                      <span class="carga-field-value">${carga.localidadDescarga || "N/A"}</span>
+                    </div>
+                    <div class="carga-field">
+                      <span class="carga-field-label">Fecha Carga:</span>
+                      <span class="carga-field-value">${carga.fechaCarga || "N/A"}</span>
+                    </div>
+                    <div class="carga-field">
+                      <span class="carga-field-label">Fecha Descarga:</span>
+                      <span class="carga-field-value">${carga.fechaDescarga || "N/A"}</span>
+                    </div>
+                    <div class="carga-field">
+                      <span class="carga-field-label">Equipo:</span>
+                      <span class="carga-field-value">${carga.equipo || "N/A"}</span>
+                    </div>
+                    <div class="carga-field">
+                      <span class="carga-field-label">Observaciones:</span>
+                      <span class="carga-field-value">${carga.observaciones || "N/A"}</span>
+                    </div>
+                  </div>
+                `;
+              });
+              
+              cargasDiv.innerHTML = cargasHtml;
+            } else {
+              cargasDiv.innerHTML = '<div style="color: #8696a0; padding: 20px; text-align: center;">No se detectaron cargas en el mensaje</div>';
+            }
+            
+            // Mostrar JSON raw
+            rawJsonDiv.innerHTML = `
+              <h4>📄 Respuesta JSON Completa</h4>
+              <pre>${JSON.stringify(cargas, null, 2)}</pre>
+            `;
+            
+          } else {
+            statusDiv.className = "simulator-status error";
+            statusDiv.innerHTML = `
+              <div style="font-weight: 600; margin-bottom: 5px;">❌ Error en el procesamiento</div>
+              <div style="font-size: 12px; color: #f15c6d; margin-top: 5px;">${result.error_message || "Error desconocido"}</div>
+            `;
+            
+            if (result.ai_response) {
+              rawJsonDiv.innerHTML = `
+                <h4>📄 Respuesta de IA (con errores)</h4>
+                <pre>${result.ai_response}</pre>
+              `;
+            }
+          }
+          
+        } catch (error) {
+          console.error("Error procesando mensaje:", error);
+          statusDiv.className = "simulator-status error";
+          statusDiv.innerHTML = `
+            <div style="font-weight: 600; margin-bottom: 5px;">❌ Error</div>
+            <div style="font-size: 12px; color: #f15c6d; margin-top: 5px;">${error.message || "Error desconocido"}</div>
+          `;
+          showNotification("Error al procesar mensaje: " + error.message, "error");
         }
       }
 
@@ -4948,6 +5374,12 @@
       // Renderizar mensajes procesados
       function renderProcessedMessages(results) {
         const tbody = document.getElementById('processingResultsBody');
+        const selectAllHeader = document.getElementById('selectAllHeader');
+        const deleteSelectedContainer = document.getElementById('deleteSelectedContainer');
+        
+        // Ocultar columna de selección y botón de eliminar seleccionados
+        selectAllHeader.style.display = 'none';
+        deleteSelectedContainer.style.display = 'none';
         
         if (!results || results.length === 0) {
           tbody.innerHTML = `
@@ -4985,24 +5417,42 @@
       // Renderizar mensajes con errores
       function renderErrorMessages(results) {
         const tbody = document.getElementById('processingResultsBody');
+        const selectAllHeader = document.getElementById('selectAllHeader');
+        const deleteSelectedContainer = document.getElementById('deleteSelectedContainer');
+        
+        // Mostrar columna de selección y botón de eliminar seleccionados
+        selectAllHeader.style.display = 'table-cell';
+        deleteSelectedContainer.style.display = 'block';
+        
+        // Resetear selección
+        document.getElementById('selectAllCheckbox').checked = false;
+        updateSelectedCount();
         
         if (!results || results.length === 0) {
           tbody.innerHTML = `
             <tr>
-              <td colspan="6" style="text-align: center; padding: 40px; color: #8696a0;">
+              <td colspan="7" style="text-align: center; padding: 40px; color: #8696a0;">
                 ✅ No hay mensajes con errores
               </td>
             </tr>
           `;
+          selectAllHeader.style.display = 'none';
+          deleteSelectedContainer.style.display = 'none';
           return;
         }
         
         tbody.innerHTML = '';
-        results.forEach(result => {
+        results.forEach((result, index) => {
           const row = document.createElement('tr');
           const date = new Date(result.processed_at);
           
           row.innerHTML = `
+            <td style="text-align: center;">
+              <input type="checkbox" class="message-checkbox" 
+                     data-message-id="${result.message_id}" 
+                     data-chat-jid="${result.chat_jid}"
+                     onchange="updateSelectedCount()">
+            </td>
             <td>${date.toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' })}</td>
             <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${result.content}">${result.content}</td>
             <td>${result.sender_phone}</td>
@@ -5079,6 +5529,96 @@
         } catch (error) {
           console.error("Error eliminando mensaje:", error);
           showNotification('❌ Error eliminando mensaje: ' + error, 'error');
+        }
+      }
+
+      // Toggle seleccionar todos
+      function toggleSelectAll() {
+        const selectAll = document.getElementById('selectAllCheckbox').checked;
+        const checkboxes = document.querySelectorAll('.message-checkbox');
+        
+        checkboxes.forEach(checkbox => {
+          checkbox.checked = selectAll;
+        });
+        
+        updateSelectedCount();
+      }
+
+      // Actualizar contador de seleccionados
+      function updateSelectedCount() {
+        const checkboxes = document.querySelectorAll('.message-checkbox:checked');
+        const count = checkboxes.length;
+        const deleteBtn = document.getElementById('deleteSelectedBtn');
+        const countSpan = document.getElementById('selectedCount');
+        
+        if (countSpan) {
+          countSpan.textContent = count;
+        }
+        
+        if (deleteBtn) {
+          deleteBtn.disabled = count === 0;
+        }
+      }
+
+      // Eliminar mensajes seleccionados
+      async function deleteSelectedErrorMessages() {
+        const checkboxes = document.querySelectorAll('.message-checkbox:checked');
+        
+        if (checkboxes.length === 0) {
+          showNotification('Por favor selecciona al menos un mensaje', 'warning');
+          return;
+        }
+        
+        const count = checkboxes.length;
+        if (!confirm(`¿Estás seguro de eliminar ${count} mensaje${count !== 1 ? 's' : ''}?\n\nEsto eliminará los mensajes de la base de datos de forma permanente.\n\nEsta acción no se puede deshacer.`)) {
+          return;
+        }
+        
+        const deleteBtn = document.getElementById('deleteSelectedBtn');
+        if (deleteBtn) {
+          deleteBtn.disabled = true;
+          deleteBtn.textContent = '⏳ Eliminando...';
+        }
+        
+        let successCount = 0;
+        let errorCount = 0;
+        
+        try {
+          // Eliminar cada mensaje seleccionado
+          for (const checkbox of checkboxes) {
+            const messageId = checkbox.getAttribute('data-message-id');
+            const chatJid = checkbox.getAttribute('data-chat-jid');
+            
+            try {
+              await window.go.main.App.DeleteMessage(messageId, chatJid);
+              successCount++;
+            } catch (error) {
+              console.error(`Error eliminando mensaje ${messageId}:`, error);
+              errorCount++;
+            }
+          }
+          
+          // Mostrar resultado
+          if (successCount > 0) {
+            showNotification(`✅ ${successCount} mensaje${successCount !== 1 ? 's' : ''} eliminado${successCount !== 1 ? 's' : ''} exitosamente`, 'success');
+          }
+          
+          if (errorCount > 0) {
+            showNotification(`⚠️ ${errorCount} mensaje${errorCount !== 1 ? 's' : ''} no se pudo${errorCount !== 1 ? 'ron' : ''} eliminar`, 'warning');
+          }
+          
+          // Recargar la vista de errores
+          await loadErrorMessages();
+          await updateProcessingStatistics();
+          
+        } catch (error) {
+          console.error("Error eliminando mensajes seleccionados:", error);
+          showNotification('❌ Error eliminando mensajes: ' + error, 'error');
+        } finally {
+          if (deleteBtn) {
+            deleteBtn.disabled = false;
+            deleteBtn.innerHTML = `🗑️ Eliminar Seleccionados (<span id="selectedCount">0</span>)`;
+          }
         }
       }
 
@@ -5730,6 +6270,85 @@ Longitud: ${foundLocation.lng}</pre>
           'Á':'A', 'É':'E', 'Í':'I', 'Ó':'O', 'Ú':'U', 'Ü':'U', 'Ñ':'N'
         };
         return str.split('').map(char => acentos[char] || char).join('');
+      }
+
+      // Probar geocodificación con Nominatim (OpenStreetMap)
+      async function testNominatimGeocoding() {
+        const testAddress = document.getElementById('testNominatimAddress').value.trim();
+        const resultDiv = document.getElementById('nominatimTestResult');
+        
+        if (!testAddress) {
+          showNotification('Por favor ingresa una dirección para probar', 'warning');
+          return;
+        }
+        
+        // Mostrar estado de carga
+        resultDiv.className = 'test-result loading show';
+        resultDiv.innerHTML = '⏳ Probando geocodificación con Nominatim...';
+        
+        try {
+          // Llamar directamente a la API de Nominatim desde el frontend
+          const encodedAddress = encodeURIComponent(testAddress);
+          const url = `https://nominatim.openstreetmap.org/search?q=${encodedAddress}&countrycodes=ar&format=json&limit=1&addressdetails=1&accept-language=es`;
+          
+          console.log('🧪 Testeando geocodificación Nominatim para:', testAddress);
+          
+          const response = await fetch(url, {
+            headers: {
+              'User-Agent': 'LoaderMeow/1.0 (Transport Logistics App - https://github.com/parinohernan/loader-meow)'
+            }
+          });
+          
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          
+          const data = await response.json();
+          
+          console.log('📥 Respuesta de Nominatim:', data);
+          
+          if (data && data.length > 0) {
+            const result = data[0];
+            const lat = parseFloat(result.lat);
+            const lng = parseFloat(result.lon);
+            const displayName = result.display_name;
+            const address = result.address || {};
+            
+            resultDiv.className = 'test-result success show';
+            resultDiv.innerHTML = `
+              <strong>✅ Geocodificación Exitosa</strong>
+              <pre>Dirección detectada: ${displayName}
+Latitud: ${lat}
+Longitud: ${lng}</pre>
+              ${address.city || address.town ? `<p style="margin-top: 10px; color: #8696a0; font-size: 12px;">
+                <strong>Detalles:</strong><br>
+                ${address.city || address.town ? `Ciudad: ${address.city || address.town}<br>` : ''}
+                ${address.state ? `Provincia: ${address.state}<br>` : ''}
+                ${address.country ? `País: ${address.country}` : ''}
+              </p>` : ''}
+              <p style="margin-top: 10px; color: #25d366;">✅ Nominatim funciona correctamente. Esta será la primera opción antes de Google Maps.</p>
+            `;
+            showNotification('✅ Nominatim funciona correctamente', 'success');
+          } else {
+            resultDiv.className = 'test-result error show';
+            resultDiv.innerHTML = `
+              <strong>⚠️ Sin Resultados</strong>
+              <p>La dirección "${testAddress}" no pudo ser geocodificada por Nominatim.</p>
+              <p>Intenta con una dirección más específica o verifica que sea una localidad argentina.</p>
+              <p style="margin-top: 10px; color: #f39c12;">ℹ️ Si Nominatim falla, el sistema usará Google Maps automáticamente como respaldo.</p>
+            `;
+            showNotification('⚠️ Nominatim no encontró resultados', 'warning');
+          }
+        } catch (error) {
+          console.error('Error testeando geocodificación Nominatim:', error);
+          resultDiv.className = 'test-result error show';
+          resultDiv.innerHTML = `
+            <strong>❌ Error de Conexión</strong>
+            <p>${error.message}</p>
+            <p style="margin-top: 10px; color: #f39c12;">ℹ️ Si Nominatim no está disponible, el sistema usará Google Maps automáticamente como respaldo.</p>
+          `;
+          showNotification('❌ Error conectando con Nominatim', 'error');
+        }
       }
 
       // Probar geocodificación con Google Maps

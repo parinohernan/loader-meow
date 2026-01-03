@@ -247,6 +247,112 @@ func (p *MessageProcessor) processMessage(msg ProcessableMessage) ProcessingResu
 	return result
 }
 
+// SimulateMessage procesa un mensaje sin guardarlo en la base de datos (para simulador)
+func (p *MessageProcessor) SimulateMessage(messageContent, realPhone string) ProcessingResult {
+	// Crear un mensaje simulado
+	simulatedMsg := ProcessableMessage{
+		ChatMessage: ChatMessage{
+			ID:          "simulation-" + fmt.Sprintf("%d", time.Now().Unix()),
+			ChatJID:     "simulation@chat",
+			Content:     messageContent,
+			SenderPhone: "simulation-sender",
+			IsFromMe:    false,
+		},
+		RealPhone: realPhone,
+	}
+	
+	// Procesar el mensaje (sin guardar en BD ni subir a Supabase)
+	result := ProcessingResult{
+		MessageID:   simulatedMsg.ID,
+		ChatJID:     simulatedMsg.ChatJID,
+		Content:     simulatedMsg.Content,
+		SenderPhone: simulatedMsg.SenderPhone,
+		RealPhone:   simulatedMsg.RealPhone,
+		Status:      "processing",
+		ProcessedAt: time.Now(),
+	}
+	
+	// Verificar si hay configuración activa de IA
+	activeConfig, err := p.aiConfigManager.GetActiveConfig()
+	if err != nil {
+		if p.aiService == nil {
+			result.Status = "error"
+			result.ErrorMessage = "No active AI configuration found. Please configure AI settings."
+			p.logger.Errorf("No AI service available")
+			return result
+		}
+		p.logger.Warnf("Using legacy AI service")
+	}
+	
+	var aiResponse []byte
+	
+	// Procesar con IA
+	p.logger.Infof("Simulando procesamiento de mensaje")
+	
+	if activeConfig != nil {
+		aiResponse, err = p.aiProviderService.ProcessMessage(p.systemPrompt, messageContent, realPhone)
+	} else {
+		if p.aiService == nil {
+			result.Status = "error"
+			result.ErrorMessage = "No AI service available"
+			return result
+		}
+		aiResponse, err = p.aiService.ProcessMessage(messageContent, realPhone)
+	}
+	
+	if err != nil {
+		result.Status = "error"
+		result.ErrorMessage = fmt.Sprintf("AI processing failed: %v", err)
+		p.logger.Errorf("Error en procesamiento IA (simulación): %v", err)
+		return result
+	}
+	
+	result.AIResponse = string(aiResponse)
+	
+	// Validar respuesta de IA
+	if err := p.aiProviderService.ValidateResponse(aiResponse); err != nil {
+		result.Status = "error"
+		result.ErrorMessage = fmt.Sprintf("Invalid AI response: %v", err)
+		p.logger.Errorf("Respuesta de IA inválida (simulación): %v", err)
+		return result
+	}
+	
+	// Normalizar respuesta
+	normalizedResponse, err := p.aiProviderService.NormalizeResponse(aiResponse)
+	if err != nil {
+		result.Status = "error"
+		result.ErrorMessage = fmt.Sprintf("Failed to normalize AI response: %v", err)
+		p.logger.Errorf("Error normalizando respuesta (simulación): %v", err)
+		return result
+	}
+	
+	result.AIResponse = string(normalizedResponse)
+	
+	// Verificar si el array está vacío
+	var cargasTemp []map[string]interface{}
+	json.Unmarshal(normalizedResponse, &cargasTemp)
+	
+	if len(cargasTemp) == 0 {
+		result.Status = "success"
+		result.ErrorMessage = "No hay información de carga válida en el mensaje (array vacío)"
+		return result
+	}
+	
+	// Validar ubicaciones (sin subir a Supabase)
+	if err := p.validateLocations(normalizedResponse); err != nil {
+		result.Status = "error"
+		result.ErrorMessage = fmt.Sprintf("Invalid locations: %v", err)
+		result.AIResponse = string(normalizedResponse)
+		return result
+	}
+	
+	// En simulación, no subimos a Supabase, solo devolvemos el resultado
+	result.Status = "success"
+	result.ErrorMessage = fmt.Sprintf("Simulación exitosa: %d carga(s) detectada(s)", len(cargasTemp))
+	
+	return result
+}
+
 // saveProcessingResult guarda el resultado del procesamiento en la base de datos
 func (p *MessageProcessor) saveProcessingResult(result ProcessingResult) error {
 	supabaseIDsJSON, _ := json.Marshal(result.SupabaseIDs)
