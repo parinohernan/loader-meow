@@ -498,6 +498,25 @@
         font-size: 14px;
       }
 
+      .reset-btn {
+        background: #374248;
+        border: 1px solid #3b4043;
+        color: #8696a0;
+        border-radius: 4px;
+        padding: 4px 8px;
+        font-size: 16px;
+        cursor: pointer;
+        margin-top: 8px;
+        transition: all 0.2s;
+      }
+
+      .reset-btn:hover {
+        background: #4a5560;
+        border-color: #25d366;
+        color: #25d366;
+        transform: rotate(180deg);
+      }
+
       .current-view-indicator {
         background: #374248;
         padding: 12px 20px;
@@ -2658,6 +2677,11 @@
               <span class="stat-value" id="errorCount">0</span>
               <span class="stat-label">❌ Errores</span>
             </div>
+            <div class="stat-card" title="Cargas duplicadas detectadas y omitidas">
+              <span class="stat-value" id="repetidasCount">0</span>
+              <span class="stat-label">🔄 Cargas repetidas</span>
+              <button class="reset-btn" onclick="resetearCargasRepetidas()" title="Resetear contador">↺</button>
+            </div>
           </div>
           
           <!-- Indicador de vista actual -->
@@ -2695,6 +2719,12 @@
             <p style="color: #8696a0; font-size: 14px; margin-bottom: 15px;">
               Procesa mensajes de a uno. El contenido ya incluye "ALT: +teléfono_real"
             </p>
+            <!-- Botón para eliminar seleccionados (solo visible en vista de errores) -->
+            <div id="deleteSelectedContainer" style="display: none; margin-bottom: 15px; text-align: right;">
+              <button class="btn-danger" onclick="deleteSelectedErrorMessages()" id="deleteSelectedBtn" disabled>
+                🗑️ Eliminar Seleccionados (<span id="selectedCount">0</span>)
+              </button>
+            </div>
             <table id="processingResultsTable">
               <thead>
                 <tr>
@@ -2713,12 +2743,6 @@
                 <!-- Los datos se cargarán dinámicamente -->
               </tbody>
             </table>
-            <!-- Botón para eliminar seleccionados (solo visible en vista de errores) -->
-            <div id="deleteSelectedContainer" style="display: none; margin-top: 15px; text-align: right;">
-              <button class="btn-danger" onclick="deleteSelectedErrorMessages()" id="deleteSelectedBtn" disabled>
-                🗑️ Eliminar Seleccionados (<span id="selectedCount">0</span>)
-              </button>
-            </div>
           </div>
         </div>
 
@@ -2978,6 +3002,7 @@
       let providersData = [];
       let modelsData = [];
       let configsData = [];
+      let currentSecondaryConfigID = null; // ID de la configuración actual para configurar IA secundaria
       
       // Variables para vistas de procesamiento
       let currentProcessingView = 'pending'; // 'pending', 'processed', 'errors'
@@ -4153,8 +4178,28 @@
           document.getElementById('processedCount').textContent = `${processedCount} (${totalCargas} carga${totalCargas !== 1 ? 's' : ''})`;
           
           document.getElementById('errorCount').textContent = stats.error_count || 0;
+          
+          // Mostrar contador de cargas repetidas
+          const repetidasCount = stats.cargas_repetidas || 0;
+          document.getElementById('repetidasCount').textContent = repetidasCount;
         } catch (error) {
           console.error('Error actualizando estadísticas:', error);
+        }
+      }
+
+      // Resetear contador de cargas repetidas
+      async function resetearCargasRepetidas() {
+        if (!confirm('¿Deseas resetear el contador de cargas repetidas a 0?')) {
+          return;
+        }
+        
+        try {
+          await window.go.main.App.ResetearCargasRepetidasCount();
+          showNotification('✅ Contador de cargas repetidas reseteado', 'success');
+          await updateProcessingStatistics();
+        } catch (error) {
+          console.error('Error reseteando contador:', error);
+          showNotification('❌ Error al resetear contador: ' + error, 'error');
         }
       }
 
@@ -5727,6 +5772,29 @@
             return;
           }
 
+          // Cargar configuraciones si no están cargadas
+          if (!configsData || configsData.length === 0) {
+            await loadConfigs();
+          }
+
+          let secondaryInfo = '';
+          if (activeConfig.secondary_config_id) {
+            // Buscar la configuración secundaria en la lista
+            const secondaryConfig = configsData.find(c => c.id === activeConfig.secondary_config_id);
+            if (secondaryConfig) {
+              secondaryInfo = `
+                <div class="config-item" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #2f3a47;">
+                  <div style="font-size: 12px; color: #8696a0; margin-bottom: 5px;">🔄 IA Secundaria (Fallback):</div>
+                  <div class="provider-badge" style="background: #ff9800;">${secondaryConfig.provider_display}</div>
+                  <div class="config-details">
+                    <div class="config-name">${secondaryConfig.name}</div>
+                    <div class="config-model">${secondaryConfig.model_display}</div>
+                  </div>
+                </div>
+              `;
+            }
+          }
+          
           display.innerHTML = `
             <div class="config-item">
               <div class="provider-badge">${activeConfig.provider_display}</div>
@@ -5735,6 +5803,23 @@
                 <div class="config-model">${activeConfig.model_display}</div>
               </div>
             </div>
+            ${secondaryInfo}
+            ${!activeConfig.secondary_config_id ? `
+              <div style="margin-top: 15px;">
+                <button class="btn-secondary" onclick="showSecondaryConfigModal(${activeConfig.id})" style="font-size: 12px;" type="button">
+                  ➕ Configurar IA Secundaria
+                </button>
+              </div>
+            ` : `
+              <div style="margin-top: 15px;">
+                <button class="btn-secondary" onclick="showSecondaryConfigModal(${activeConfig.id})" style="font-size: 12px;" type="button">
+                  ✏️ Cambiar IA Secundaria
+                </button>
+                <button class="btn-secondary" onclick="removeSecondaryConfig(${activeConfig.id})" style="font-size: 12px; margin-left: 10px;" type="button">
+                  🗑️ Quitar IA Secundaria
+                </button>
+              </div>
+            `}
           `;
         } catch (error) {
           console.error("Error cargando configuración activa:", error);
@@ -5837,6 +5922,7 @@
             </div>
             <div class="config-card-actions">
               ${!config.is_active ? `<button class="btn-icon btn-success" onclick="activateConfig(${config.id})" title="Activar">✓</button>` : ''}
+              ${config.is_active ? `<button class="btn-icon" onclick="showSecondaryConfigModal(${config.id})" title="Configurar IA Secundaria" type="button">🔄</button>` : ''}
               <button class="btn-icon" onclick="testConfig(${config.id})" title="Probar">🧪</button>
               ${config.error_count > 0 ? `<button class="btn-icon" onclick="resetErrors(${config.id})" title="Resetear errores">🔄</button>` : ''}
               <button class="btn-icon btn-danger" onclick="deleteConfig(${config.id})" title="Eliminar">🗑️</button>
@@ -5962,6 +6048,131 @@
         } catch (error) {
           console.error("Error activando configuración:", error);
           showNotification('❌ Error activando configuración', 'error');
+        }
+      }
+
+      // Mostrar modal para configurar IA secundaria
+      async function showSecondaryConfigModal(configID) {
+        try {
+          console.log('🔄 Abriendo modal de IA secundaria para config:', configID);
+          
+          if (!configID) {
+            console.error('❌ No se proporcionó configID');
+            showNotification('❌ Error: No se pudo identificar la configuración', 'error');
+            return;
+          }
+          
+          currentSecondaryConfigID = configID;
+          
+          let modal = document.getElementById('secondaryConfigModal');
+          if (!modal) {
+            console.log('📝 Creando modal de IA secundaria...');
+            // Crear modal si no existe
+            const modalHTML = `
+              <div id="secondaryConfigModal" class="modal">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h3>🔄 Configurar IA Secundaria</h3>
+                    <button class="modal-close" onclick="closeSecondaryConfigModal()">×</button>
+                  </div>
+                  <div class="modal-body">
+                    <p style="color: #8696a0; margin-bottom: 15px;">
+                      La IA secundaria se usará automáticamente si la principal falla.
+                    </p>
+                    <label>Seleccionar IA Secundaria:</label>
+                    <select id="secondaryConfigSelect" style="width: 100%; padding: 10px; margin-top: 5px; background: #1e2329; color: #e9edef; border: 1px solid #2f3a47; border-radius: 5px;">
+                      <option value="">Ninguna (quitar IA secundaria)</option>
+                    </select>
+                  </div>
+                  <div class="modal-footer">
+                    <button class="btn-primary" onclick="saveSecondaryConfig()">💾 Guardar</button>
+                    <button class="btn-secondary" onclick="closeSecondaryConfigModal()">Cancelar</button>
+                  </div>
+                </div>
+              </div>
+            `;
+            document.body.insertAdjacentHTML('beforeend', modalHTML);
+            modal = document.getElementById('secondaryConfigModal');
+            console.log('✅ Modal creado');
+          }
+          
+          // Cargar configuraciones disponibles (excluyendo la actual)
+          console.log('📥 Cargando configuraciones...');
+          const configs = await window.go.main.App.GetAIConfigs();
+          console.log('✅ Configuraciones cargadas:', configs.length);
+          
+          const select = document.getElementById('secondaryConfigSelect');
+          if (!select) {
+            console.error('❌ No se encontró el select secondaryConfigSelect');
+            showNotification('❌ Error: No se pudo encontrar el selector', 'error');
+            return;
+          }
+          
+          select.innerHTML = '<option value="">Ninguna (quitar IA secundaria)</option>';
+          
+          configs.forEach(config => {
+            if (config.id !== configID && config.is_enabled) {
+              select.innerHTML += `<option value="${config.id}">${config.provider_display} - ${config.name} (${config.model_display})</option>`;
+            }
+          });
+          
+          // Seleccionar la actual si existe
+          const currentConfig = configs.find(c => c.id === configID);
+          if (currentConfig && currentConfig.secondary_config_id) {
+            select.value = currentConfig.secondary_config_id;
+            console.log('✅ IA secundaria actual seleccionada:', currentConfig.secondary_config_id);
+          }
+          
+          modal.classList.add('show');
+          console.log('✅ Modal mostrado');
+        } catch (error) {
+          console.error('❌ Error en showSecondaryConfigModal:', error);
+          showNotification('❌ Error abriendo modal: ' + error, 'error');
+        }
+      };
+
+      // Cerrar modal de IA secundaria
+      function closeSecondaryConfigModal() {
+        const modal = document.getElementById('secondaryConfigModal');
+        if (modal) {
+          modal.classList.remove('show');
+        }
+      }
+
+      // Guardar configuración secundaria
+      async function saveSecondaryConfig() {
+        if (!currentSecondaryConfigID) {
+          showNotification('❌ Error: No se pudo identificar la configuración', 'error');
+          return;
+        }
+        
+        const select = document.getElementById('secondaryConfigSelect');
+        const secondaryConfigID = select.value ? parseInt(select.value) : null;
+        
+        try {
+          await window.go.main.App.SetSecondaryAIConfig(currentSecondaryConfigID, secondaryConfigID);
+          showNotification('✅ IA secundaria configurada exitosamente', 'success');
+          closeSecondaryConfigModal();
+          await loadAIConfigPanel();
+        } catch (error) {
+          console.error("Error guardando IA secundaria:", error);
+          showNotification('❌ Error guardando IA secundaria: ' + error, 'error');
+        }
+      }
+
+      // Quitar IA secundaria
+      async function removeSecondaryConfig(configID) {
+        if (!confirm('¿Quitar la IA secundaria? El sistema solo usará la IA principal.')) {
+          return;
+        }
+        
+        try {
+          await window.go.main.App.SetSecondaryAIConfig(configID, null);
+          showNotification('✅ IA secundaria removida', 'success');
+          await loadAIConfigPanel();
+        } catch (error) {
+          console.error("Error removiendo IA secundaria:", error);
+          showNotification('❌ Error removiendo IA secundaria: ' + error, 'error');
         }
       }
 

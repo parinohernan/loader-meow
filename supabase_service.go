@@ -154,8 +154,21 @@ func (s *SupabaseService) CrearCargasDesdeJSON(jsonData []byte) ([]string, error
 	}
 	
 	var createdIDs []string
+	duplicateCount := 0
 	
 	for i, carga := range cargas {
+		// Verificar si es duplicada antes de crear
+		isDuplicate, err := s.verificarCargaDuplicada(carga)
+		if err != nil {
+			// Si hay error verificando, continuar con la creación (mejor intentar que fallar)
+			fmt.Printf("⚠️ Error verificando duplicado para carga %d: %v\n", i+1, err)
+		} else if isDuplicate {
+			// Es duplicada, no crear y contar
+			duplicateCount++
+			fmt.Printf("🔄 Carga %d duplicada (mismo origen, destino, fechas y teléfono) - omitida\n", i+1)
+			continue
+		}
+		
 		// Crear carga individual
 		cargaID, err := s.crearCarga(carga, i)
 		if err != nil {
@@ -166,6 +179,11 @@ func (s *SupabaseService) CrearCargasDesdeJSON(jsonData []byte) ([]string, error
 		
 		// Pequeña pausa entre cargas
 		time.Sleep(100 * time.Millisecond)
+	}
+	
+	// Incrementar contador de cargas repetidas si hay duplicados
+	if duplicateCount > 0 {
+		s.incrementarContadorCargasRepetidas(duplicateCount)
 	}
 	
 	return createdIDs, nil
@@ -955,4 +973,149 @@ func (s *SupabaseService) formatearFecha(fecha string) string {
 	
 	// Si no se puede parsear, usar fecha actual
 	return time.Now().Format(formatoSalida)
+}
+
+// verificarCargaDuplicada verifica si existe una carga duplicada en Supabase
+// (mismo origen, destino, fechas de carga y entrega, y mismo teléfono)
+func (s *SupabaseService) verificarCargaDuplicada(carga CargaData) (bool, error) {
+	// Buscar IDs de ubicaciones existentes (sin crearlas)
+	ubicacionInicialID, err := s.buscarUbicacion(carga.LocalidadCarga)
+	if err != nil || ubicacionInicialID == "" {
+		// Si la ubicación no existe, no puede haber duplicados
+		return false, nil
+	}
+	
+	ubicacionFinalID, err := s.buscarUbicacion(carga.LocalidadDescarga)
+	if err != nil || ubicacionFinalID == "" {
+		// Si la ubicación no existe, no puede haber duplicados
+		return false, nil
+	}
+	
+	// Formatear fechas para comparación
+	fechaCarga := s.formatearFecha(carga.FechaCarga)
+	fechaDescarga := s.formatearFecha(carga.FechaDescarga)
+	telefono := s.validarTelefono(carga.Telefono)
+	
+	if telefono == "" {
+		// Si no hay teléfono, no podemos verificar duplicados por teléfono
+		// Pero podemos verificar por origen, destino y fechas
+		url := fmt.Sprintf("%s/rest/v1/cargas?ubicacioninicial_id=eq.%s&ubicacionfinal_id=eq.%s&fechacarga=eq.%s&fechadescarga=eq.%s&select=id", 
+			s.url, 
+			ubicacionInicialID, 
+			ubicacionFinalID, 
+			fechaCarga, 
+			fechaDescarga)
+		
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			return false, err
+		}
+		
+		req.Header.Set("apikey", s.apiKey)
+		req.Header.Set("Authorization", "Bearer "+s.apiKey)
+		req.Header.Set("Content-Type", "application/json")
+		
+		resp, err := s.client.Do(req)
+		if err != nil {
+			return false, err
+		}
+		defer resp.Body.Close()
+		
+		if resp.StatusCode != http.StatusOK {
+			return false, nil
+		}
+		
+		var cargas []map[string]interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&cargas); err != nil {
+			return false, err
+		}
+		
+		return len(cargas) > 0, nil
+	}
+	
+	// Construir query para buscar cargas duplicadas con teléfono
+	url := fmt.Sprintf("%s/rest/v1/cargas?ubicacioninicial_id=eq.%s&ubicacionfinal_id=eq.%s&fechacarga=eq.%s&fechadescarga=eq.%s&telefonodador=eq.%s&select=id", 
+		s.url, 
+		ubicacionInicialID, 
+		ubicacionFinalID, 
+		fechaCarga, 
+		fechaDescarga, 
+		url.QueryEscape(telefono))
+	
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return false, err
+	}
+	
+	req.Header.Set("apikey", s.apiKey)
+	req.Header.Set("Authorization", "Bearer "+s.apiKey)
+	req.Header.Set("Content-Type", "application/json")
+	
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	
+	if resp.StatusCode != http.StatusOK {
+		// Si hay error en la consulta, asumir que no es duplicada (mejor intentar crear)
+		return false, nil
+	}
+	
+	var cargas []map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&cargas); err != nil {
+		return false, err
+	}
+	
+	// Si hay al menos una carga con los mismos datos, es duplicada
+	return len(cargas) > 0, nil
+}
+
+// incrementarContadorCargasRepetidas incrementa el contador de cargas repetidas
+func (s *SupabaseService) incrementarContadorCargasRepetidas(cantidad int) {
+	if s.systemConfigManager == nil {
+		return
+	}
+	
+	// Obtener contador actual
+	contadorActual := 0
+	valorActual, err := s.systemConfigManager.GetConfig("cargas_repetidas_count")
+	if err == nil {
+		if val, err := strconv.Atoi(valorActual); err == nil {
+			contadorActual = val
+		}
+	}
+	
+	// Incrementar y guardar
+	nuevoValor := contadorActual + cantidad
+	s.systemConfigManager.SetConfig("cargas_repetidas_count", strconv.Itoa(nuevoValor))
+}
+
+// ObtenerContadorCargasRepetidas obtiene el contador de cargas repetidas
+func (s *SupabaseService) ObtenerContadorCargasRepetidas() (int, error) {
+	if s.systemConfigManager == nil {
+		return 0, fmt.Errorf("system config manager not available")
+	}
+	
+	valor, err := s.systemConfigManager.GetConfig("cargas_repetidas_count")
+	if err != nil {
+		// Si no existe, retornar 0
+		return 0, nil
+	}
+	
+	contador, err := strconv.Atoi(valor)
+	if err != nil {
+		return 0, nil
+	}
+	
+	return contador, nil
+}
+
+// ResetearContadorCargasRepetidas resetea el contador de cargas repetidas a 0
+func (s *SupabaseService) ResetearContadorCargasRepetidas() error {
+	if s.systemConfigManager == nil {
+		return fmt.Errorf("system config manager not available")
+	}
+	
+	return s.systemConfigManager.SetConfig("cargas_repetidas_count", "0")
 }

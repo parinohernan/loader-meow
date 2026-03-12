@@ -45,19 +45,20 @@ type AIModel struct {
 
 // AIConfigDB representa una configuración de API key en la base de datos
 type AIConfigDB struct {
-	ID            int       `json:"id"`
-	ProviderID    int       `json:"provider_id"`
-	ModelID       int       `json:"model_id"`
-	APIKey        string    `json:"api_key"`
-	Name          string    `json:"name"`
-	IsActive      bool      `json:"is_active"`
-	IsEnabled     bool      `json:"is_enabled"`
-	ErrorCount    int       `json:"error_count"`
-	LastError     string    `json:"last_error"`
-	LastUsedAt    *time.Time `json:"last_used_at"`
-	LastSuccessAt *time.Time `json:"last_success_at"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID                int       `json:"id"`
+	ProviderID        int       `json:"provider_id"`
+	ModelID           int       `json:"model_id"`
+	APIKey            string    `json:"api_key"`
+	Name              string    `json:"name"`
+	IsActive          bool      `json:"is_active"`
+	IsEnabled         bool      `json:"is_enabled"`
+	SecondaryConfigID *int      `json:"secondary_config_id"` // ID de la configuración secundaria (fallback)
+	ErrorCount        int       `json:"error_count"`
+	LastError         string    `json:"last_error"`
+	LastUsedAt        *time.Time `json:"last_used_at"`
+	LastSuccessAt     *time.Time `json:"last_success_at"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 	
 	// Campos adicionales para facilitar el uso en el frontend
 	ProviderName    string `json:"provider_name"`
@@ -140,7 +141,7 @@ func (m *AIConfigManager) GetAllConfigs() ([]AIConfigDB, error) {
 	rows, err := m.db.Query(`
 		SELECT 
 			c.id, c.provider_id, c.model_id, c.api_key, c.name, c.is_active, c.is_enabled,
-			c.error_count, c.last_error, c.last_used_at, c.last_success_at, c.created_at, c.updated_at,
+			c.secondary_config_id, c.error_count, c.last_error, c.last_used_at, c.last_success_at, c.created_at, c.updated_at,
 			p.name as provider_name, p.display_name as provider_display,
 			m.name as model_name, m.display_name as model_display, m.max_tokens
 		FROM ai_configs c
@@ -158,16 +159,21 @@ func (m *AIConfigManager) GetAllConfigs() ([]AIConfigDB, error) {
 		var c AIConfigDB
 		var lastUsedAt, lastSuccessAt sql.NullTime
 		var lastError sql.NullString
+		var secondaryConfigID sql.NullInt64
 		
 		err := rows.Scan(
 			&c.ID, &c.ProviderID, &c.ModelID, &c.APIKey, &c.Name, &c.IsActive, &c.IsEnabled,
-			&c.ErrorCount, &lastError, &lastUsedAt, &lastSuccessAt, &c.CreatedAt, &c.UpdatedAt,
+			&secondaryConfigID, &c.ErrorCount, &lastError, &lastUsedAt, &lastSuccessAt, &c.CreatedAt, &c.UpdatedAt,
 			&c.ProviderName, &c.ProviderDisplay, &c.ModelName, &c.ModelDisplay, &c.MaxTokens,
 		)
 		if err != nil {
 			return nil, err
 		}
 		
+		if secondaryConfigID.Valid {
+			id := int(secondaryConfigID.Int64)
+			c.SecondaryConfigID = &id
+		}
 		if lastError.Valid {
 			c.LastError = lastError.String
 		}
@@ -228,11 +234,12 @@ func (m *AIConfigManager) getActiveConfigFromDB() (*AIConfigDB, error) {
 	var c AIConfigDB
 	var lastUsedAt, lastSuccessAt sql.NullTime
 	var lastError sql.NullString
+	var secondaryConfigID sql.NullInt64
 	
 	err := m.db.QueryRow(`
 		SELECT 
 			c.id, c.provider_id, c.model_id, c.api_key, c.name, c.is_active, c.is_enabled,
-			c.error_count, c.last_error, c.last_used_at, c.last_success_at, c.created_at, c.updated_at,
+			c.secondary_config_id, c.error_count, c.last_error, c.last_used_at, c.last_success_at, c.created_at, c.updated_at,
 			p.name as provider_name, p.display_name as provider_display,
 			m.name as model_name, m.display_name as model_display, m.max_tokens
 		FROM ai_configs c
@@ -242,7 +249,7 @@ func (m *AIConfigManager) getActiveConfigFromDB() (*AIConfigDB, error) {
 		LIMIT 1
 	`).Scan(
 		&c.ID, &c.ProviderID, &c.ModelID, &c.APIKey, &c.Name, &c.IsActive, &c.IsEnabled,
-		&c.ErrorCount, &lastError, &lastUsedAt, &lastSuccessAt, &c.CreatedAt, &c.UpdatedAt,
+		&secondaryConfigID, &c.ErrorCount, &lastError, &lastUsedAt, &lastSuccessAt, &c.CreatedAt, &c.UpdatedAt,
 		&c.ProviderName, &c.ProviderDisplay, &c.ModelName, &c.ModelDisplay, &c.MaxTokens,
 	)
 	
@@ -253,6 +260,10 @@ func (m *AIConfigManager) getActiveConfigFromDB() (*AIConfigDB, error) {
 		return nil, err
 	}
 	
+	if secondaryConfigID.Valid {
+		id := int(secondaryConfigID.Int64)
+		c.SecondaryConfigID = &id
+	}
 	if lastError.Valid {
 		c.LastError = lastError.String
 	}
@@ -363,6 +374,90 @@ func (m *AIConfigManager) DeleteConfig(id int) error {
 	
 	_, err := m.db.Exec("DELETE FROM ai_configs WHERE id = ?", id)
 	return err
+}
+
+// GetSecondaryConfig obtiene la configuración secundaria por ID
+func (m *AIConfigManager) GetSecondaryConfig(configID int) (*AIConfigDB, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	
+	var c AIConfigDB
+	var lastUsedAt, lastSuccessAt sql.NullTime
+	var lastError sql.NullString
+	var secondaryConfigID sql.NullInt64
+	
+	err := m.db.QueryRow(`
+		SELECT 
+			c.id, c.provider_id, c.model_id, c.api_key, c.name, c.is_active, c.is_enabled,
+			c.secondary_config_id, c.error_count, c.last_error, c.last_used_at, c.last_success_at, c.created_at, c.updated_at,
+			p.name as provider_name, p.display_name as provider_display,
+			m.name as model_name, m.display_name as model_display, m.max_tokens
+		FROM ai_configs c
+		JOIN ai_providers p ON c.provider_id = p.id
+		JOIN ai_models m ON c.model_id = m.id
+		WHERE c.id = ? AND c.is_enabled = 1 AND p.is_enabled = 1
+		LIMIT 1
+	`, configID).Scan(
+		&c.ID, &c.ProviderID, &c.ModelID, &c.APIKey, &c.Name, &c.IsActive, &c.IsEnabled,
+		&secondaryConfigID, &c.ErrorCount, &lastError, &lastUsedAt, &lastSuccessAt, &c.CreatedAt, &c.UpdatedAt,
+		&c.ProviderName, &c.ProviderDisplay, &c.ModelName, &c.ModelDisplay, &c.MaxTokens,
+	)
+	
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("secondary config not found")
+	}
+	if err != nil {
+		return nil, err
+	}
+	
+	if secondaryConfigID.Valid {
+		id := int(secondaryConfigID.Int64)
+		c.SecondaryConfigID = &id
+	}
+	if lastError.Valid {
+		c.LastError = lastError.String
+	}
+	if lastUsedAt.Valid {
+		t := lastUsedAt.Time
+		c.LastUsedAt = &t
+	}
+	if lastSuccessAt.Valid {
+		t := lastSuccessAt.Time
+		c.LastSuccessAt = &t
+	}
+	
+	return &c, nil
+}
+
+// SetSecondaryConfig establece la configuración secundaria para una configuración activa
+func (m *AIConfigManager) SetSecondaryConfig(configID int, secondaryConfigID *int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
+	var err error
+	if secondaryConfigID == nil {
+		_, err = m.db.Exec(`
+			UPDATE ai_configs 
+			SET secondary_config_id = NULL, updated_at = CURRENT_TIMESTAMP
+			WHERE id = ?
+		`, configID)
+	} else {
+		_, err = m.db.Exec(`
+			UPDATE ai_configs 
+			SET secondary_config_id = ?, updated_at = CURRENT_TIMESTAMP
+			WHERE id = ?
+		`, *secondaryConfigID, configID)
+	}
+	
+	if err != nil {
+		return err
+	}
+	
+	// Invalidar caché
+	m.activeConfigCache = nil
+	fmt.Printf("🔄 Caché invalidado (SetSecondaryConfig)\n")
+	
+	return nil
 }
 
 // SetActiveConfig establece una configuración como activa

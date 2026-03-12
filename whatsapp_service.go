@@ -274,8 +274,8 @@ func isIndexExistsError(err error) bool {
 
 // runMigrations ejecuta migraciones de base de datos
 func runMigrations(db *sql.DB) error {
-	// Verificar si las columnas ya existen
-	columns := []struct {
+	// Verificar si las columnas ya existen en messages
+	messageColumns := []struct {
 		name       string
 		definition string
 	}{
@@ -284,7 +284,7 @@ func runMigrations(db *sql.DB) error {
 		{"last_processing_attempt", "TIMESTAMP NULL"},
 	}
 
-	for _, col := range columns {
+	for _, col := range messageColumns {
 		// Intentar agregar la columna
 		alterQuery := fmt.Sprintf("ALTER TABLE messages ADD COLUMN %s %s", col.name, col.definition)
 		_, err := db.Exec(alterQuery)
@@ -293,6 +293,14 @@ func runMigrations(db *sql.DB) error {
 		if err != nil && !isColumnExistsError(err) {
 			return fmt.Errorf("failed to add column %s: %v", col.name, err)
 		}
+	}
+
+	// Agregar columna secondary_config_id a ai_configs si no existe
+	alterQuery := "ALTER TABLE ai_configs ADD COLUMN secondary_config_id INT NULL"
+	_, err := db.Exec(alterQuery)
+	if err != nil && !isColumnExistsError(err) {
+		// Ignorar error si la columna ya existe
+		fmt.Printf("⚠️ No se pudo agregar secondary_config_id (puede que ya exista): %v\n", err)
 	}
 
 	return nil
@@ -519,7 +527,7 @@ func (store *MessageStore) GetProcessableMessages(limit int) ([]ProcessableMessa
 		  AND m.content != ''
 		  AND pa.real_phone IS NOT NULL
 		  AND pa.real_phone != ''
-		  AND (m.processing_attempts < 3 OR m.processing_attempts IS NULL)
+		  AND (m.processing_attempts = 0 OR m.processing_attempts IS NULL)
 		  -- Filtrar mensajes de texto cortos (menos de 20 caracteres) para descongestionar la API
 		  -- Solo aplicar este filtro a mensajes de texto (sin media_type o media_type vacío)
 		  AND (
@@ -561,6 +569,7 @@ func (store *MessageStore) GetProcessableMessagesCount() (int, error) {
 		  AND m.content != ''
 		  AND pa.real_phone IS NOT NULL
 		  AND pa.real_phone != ''
+		  AND (m.processing_attempts = 0 OR m.processing_attempts IS NULL)
 		  -- Filtrar mensajes de texto cortos (menos de 20 caracteres) para descongestionar la API
 		  -- Solo aplicar este filtro a mensajes de texto (sin media_type o media_type vacío)
 		  AND (
@@ -647,13 +656,19 @@ func (store *MessageStore) IncrementProcessingAttempt(messageID, chatJID, errorM
 }
 
 // MarkMessageAsFailedAfterRetries marca un mensaje como procesado después de múltiples fallos
-func (store *MessageStore) MarkMessageAsFailedAfterRetries(messageID, chatJID string) error {
+// Si errorMsg está vacío, usa un mensaje por defecto
+func (store *MessageStore) MarkMessageAsFailedAfterRetries(messageID, chatJID string, errorMsg ...string) error {
+	errorMessage := "Error permanente: no se reintentará para evitar consumo innecesario de tokens"
+	if len(errorMsg) > 0 && errorMsg[0] != "" {
+		errorMessage = errorMsg[0]
+	}
+	
 	_, err := store.db.Exec(
 		`UPDATE messages 
 		 SET processed = 1,
-		     last_processing_error = 'Demasiados intentos fallidos'
+		     last_processing_error = ?
 		 WHERE id = ? AND chat_jid = ?`,
-		messageID, chatJID,
+		errorMessage, messageID, chatJID,
 	)
 	return err
 }

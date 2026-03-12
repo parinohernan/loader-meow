@@ -371,6 +371,24 @@ func (a *App) GetProcessingStats() (map[string]interface{}, error) {
 	return a.messageProcessor.GetProcessingStats()
 }
 
+// GetCargasRepetidasCount obtiene el contador de cargas repetidas
+func (a *App) GetCargasRepetidasCount() (int, error) {
+	if a.messageProcessor == nil {
+		return 0, fmt.Errorf("message processor not initialized")
+	}
+
+	return a.messageProcessor.GetCargasRepetidasCount()
+}
+
+// ResetearCargasRepetidasCount resetea el contador de cargas repetidas a 0
+func (a *App) ResetearCargasRepetidasCount() error {
+	if a.messageProcessor == nil {
+		return fmt.Errorf("message processor not initialized")
+	}
+
+	return a.messageProcessor.ResetearCargasRepetidasCount()
+}
+
 // SimulateMessage procesa un mensaje sin guardarlo (para simulador)
 func (a *App) SimulateMessage(messageContent, realPhone string) (ProcessingResult, error) {
 	if a.messageProcessor == nil {
@@ -611,6 +629,14 @@ func (a *App) SetActiveAIConfig(id int) error {
 		return fmt.Errorf("AI config manager not initialized")
 	}
 	return a.waService.aiConfigManager.SetActiveConfig(id)
+}
+
+// SetSecondaryAIConfig establece la configuración secundaria para una configuración activa
+func (a *App) SetSecondaryAIConfig(configID int, secondaryConfigID *int) error {
+	if a.waService == nil || a.waService.aiConfigManager == nil {
+		return fmt.Errorf("AI config manager not initialized")
+	}
+	return a.waService.aiConfigManager.SetSecondaryConfig(configID, secondaryConfigID)
 }
 
 // ResetAIConfigErrors resetea el contador de errores de una configuración

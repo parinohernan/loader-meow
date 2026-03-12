@@ -69,6 +69,44 @@ func NewMessageProcessor(messageStore *MessageStore, logger waLog.Logger, keysMa
 	}, nil
 }
 
+// cleanMessageContent limpia el contenido del mensaje eliminando caracteres especiales
+// que pueden interferir con el procesamiento JSON de la IA
+func cleanMessageContent(content string) string {
+	// Reemplazar caracteres problemáticos que pueden romper el JSON
+	cleaned := strings.ReplaceAll(content, "}", "")
+	cleaned = strings.ReplaceAll(cleaned, "{", "")
+	cleaned = strings.ReplaceAll(cleaned, "]", "")
+	cleaned = strings.ReplaceAll(cleaned, "[", "")
+	
+	// Limpiar espacios múltiples generados por las eliminaciones
+	cleaned = strings.ReplaceAll(cleaned, "  ", " ")
+	cleaned = strings.TrimSpace(cleaned)
+	
+	return cleaned
+}
+
+// isPermanentError detecta si un error es permanente (no se soluciona reintentando)
+// Estos errores deben marcar el mensaje como procesado inmediatamente para evitar
+// consumir tokens innecesariamente en reintentos que no van a funcionar
+func isPermanentError(errorMsg string) bool {
+	errorLower := strings.ToLower(errorMsg)
+	
+	// Errores de JSON inválido - no se solucionan reintentando
+	if strings.Contains(errorLower, "invalid json") || 
+	   strings.Contains(errorLower, "invalid ai response") ||
+	   strings.Contains(errorLower, "failed to normalize") ||
+	   strings.Contains(errorLower, "json.unmarshal") {
+		return true
+	}
+	
+	// Errores de validación permanente
+	if strings.Contains(errorLower, "invalid locations") {
+		return true
+	}
+	
+	return false
+}
+
 // ProcessPendingMessages procesa mensajes pendientes
 func (p *MessageProcessor) ProcessPendingMessages(limit int) ([]ProcessingResult, error) {
 	// Obtener mensajes procesables
@@ -106,11 +144,11 @@ func (p *MessageProcessor) ProcessPendingMessages(limit int) ([]ProcessingResult
 				p.logger.Errorf("Error marcando mensaje como procesado: %v", err)
 			}
 		case "error":
-			// Incrementar contador de intentos y registrar error
-			if err := p.messageStore.IncrementProcessingAttempt(msg.ID, msg.ChatJID, result.ErrorMessage); err != nil {
-				p.logger.Errorf("Error incrementando intentos: %v", err)
-			} else {
-				p.logger.Warnf("Intento fallido para mensaje %s. Error: %s", msg.ID, result.ErrorMessage)
+			// Todos los errores se marcan como procesados inmediatamente para evitar reintentos
+			// que consumen tokens innecesariamente
+			p.logger.Warnf("🚫 Error detectado para mensaje %s: %s. Marcando como procesado para evitar reintentos.", msg.ID, result.ErrorMessage)
+			if err := p.messageStore.MarkMessageAsFailedAfterRetries(msg.ID, msg.ChatJID, result.ErrorMessage); err != nil {
+				p.logger.Errorf("Error marcando mensaje como fallido: %v", err)
 			}
 		}
 		
@@ -149,15 +187,41 @@ func (p *MessageProcessor) processMessage(msg ProcessableMessage) ProcessingResu
 	
 	var aiResponse []byte
 	
-	// 1. Procesar con IA usando el nuevo sistema multi-proveedor
-	p.logger.Infof("Llamando a IA para mensaje %s", msg.ID)
+	// Limpiar contenido del mensaje eliminando caracteres especiales problemáticos
+	cleanedContent := cleanMessageContent(msg.Content)
+	if cleanedContent != msg.Content {
+		p.logger.Infof("🧹 Contenido limpiado: se eliminaron caracteres especiales del mensaje %s", msg.ID)
+	}
+	
+	// 1. Procesar con IA principal
+	p.logger.Infof("Llamando a IA principal para mensaje %s", msg.ID)
 	
 	if activeConfig != nil {
-		// Usar nuevo sistema multi-proveedor
-		aiResponse, err = p.aiProviderService.ProcessMessage(p.systemPrompt, msg.Content, msg.RealPhone)
+		// Usar nuevo sistema multi-proveedor con contenido limpiado
+		aiResponse, err = p.aiProviderService.ProcessMessageWithConfig(activeConfig, p.systemPrompt, cleanedContent, msg.RealPhone)
 	} else {
-		// Usar sistema legacy
-		aiResponse, err = p.aiService.ProcessMessage(msg.Content, msg.RealPhone)
+		// Usar sistema legacy con contenido limpiado
+		aiResponse, err = p.aiService.ProcessMessage(cleanedContent, msg.RealPhone)
+	}
+	
+	// Si falla con la principal y hay configuración secundaria, intentar con secundaria
+	if err != nil && activeConfig != nil && activeConfig.SecondaryConfigID != nil {
+		p.logger.Warnf("⚠️ Error con IA principal para mensaje %s: %v. Intentando con IA secundaria...", msg.ID, err)
+		
+		// Obtener configuración secundaria
+		secondaryConfig, secondaryErr := p.aiConfigManager.GetSecondaryConfig(*activeConfig.SecondaryConfigID)
+		if secondaryErr == nil && secondaryConfig != nil {
+			p.logger.Infof("🔄 Intentando con IA secundaria: %s - %s (%s)", secondaryConfig.ProviderDisplay, secondaryConfig.ModelDisplay, secondaryConfig.Name)
+			aiResponse, err = p.aiProviderService.ProcessMessageWithConfig(secondaryConfig, p.systemPrompt, cleanedContent, msg.RealPhone)
+			
+			if err == nil {
+				p.logger.Infof("✅ IA secundaria procesó exitosamente el mensaje %s", msg.ID)
+			} else {
+				p.logger.Errorf("❌ IA secundaria también falló para mensaje %s: %v", msg.ID, err)
+			}
+		} else {
+			p.logger.Errorf("❌ No se pudo obtener configuración secundaria: %v", secondaryErr)
+		}
 	}
 	
 	if err != nil {
@@ -286,18 +350,24 @@ func (p *MessageProcessor) SimulateMessage(messageContent, realPhone string) Pro
 	
 	var aiResponse []byte
 	
+	// Limpiar contenido del mensaje eliminando caracteres especiales problemáticos
+	cleanedContent := cleanMessageContent(messageContent)
+	if cleanedContent != messageContent {
+		p.logger.Infof("🧹 Contenido limpiado: se eliminaron caracteres especiales en simulación")
+	}
+	
 	// Procesar con IA
 	p.logger.Infof("Simulando procesamiento de mensaje")
 	
 	if activeConfig != nil {
-		aiResponse, err = p.aiProviderService.ProcessMessage(p.systemPrompt, messageContent, realPhone)
+		aiResponse, err = p.aiProviderService.ProcessMessage(p.systemPrompt, cleanedContent, realPhone)
 	} else {
 		if p.aiService == nil {
 			result.Status = "error"
 			result.ErrorMessage = "No AI service available"
 			return result
 		}
-		aiResponse, err = p.aiService.ProcessMessage(messageContent, realPhone)
+		aiResponse, err = p.aiService.ProcessMessage(cleanedContent, realPhone)
 	}
 	
 	if err != nil {
@@ -493,12 +563,31 @@ func (p *MessageProcessor) GetProcessingStats() (map[string]interface{}, error) 
 		stats["total_cargas"] = 0
 	}
 	
+	// Obtener contador de cargas repetidas
+	repetidasCount, err := p.supabaseService.ObtenerContadorCargasRepetidas()
+	if err != nil {
+		// Si hay error, usar 0 como valor por defecto
+		stats["cargas_repetidas"] = 0
+	} else {
+		stats["cargas_repetidas"] = repetidasCount
+	}
+	
 	return stats, nil
 }
 
 // GetProcessableMessagesCount obtiene el conteo de mensajes procesables
 func (p *MessageProcessor) GetProcessableMessagesCount() (int, error) {
 	return p.messageStore.GetProcessableMessagesCount()
+}
+
+// GetCargasRepetidasCount obtiene el contador de cargas repetidas
+func (p *MessageProcessor) GetCargasRepetidasCount() (int, error) {
+	return p.supabaseService.ObtenerContadorCargasRepetidas()
+}
+
+// ResetearCargasRepetidasCount resetea el contador de cargas repetidas a 0
+func (p *MessageProcessor) ResetearCargasRepetidasCount() error {
+	return p.supabaseService.ResetearContadorCargasRepetidas()
 }
 
 // ProcessSingleMessage procesa un solo mensaje por ID
@@ -531,8 +620,11 @@ func (p *MessageProcessor) ProcessSingleMessage(messageID, chatJID string) (Proc
 			p.logger.Errorf("Error marcando mensaje como procesado: %v", err)
 		}
 	case "error":
-		if err := p.messageStore.IncrementProcessingAttempt(targetMessage.ID, targetMessage.ChatJID, result.ErrorMessage); err != nil {
-			p.logger.Errorf("Error incrementando intentos: %v", err)
+		// Todos los errores se marcan como procesados inmediatamente para evitar reintentos
+		// que consumen tokens innecesariamente
+		p.logger.Warnf("🚫 Error detectado para mensaje %s: %s. Marcando como procesado para evitar reintentos.", targetMessage.ID, result.ErrorMessage)
+		if err := p.messageStore.MarkMessageAsFailedAfterRetries(targetMessage.ID, targetMessage.ChatJID, result.ErrorMessage); err != nil {
+			p.logger.Errorf("Error marcando mensaje como fallido: %v", err)
 		}
 	}
 	

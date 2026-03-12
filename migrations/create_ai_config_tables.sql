@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS ai_configs (
     name VARCHAR(255) NOT NULL,          -- Nombre descriptivo (ej: "Key Principal Gemini")
     is_active BOOLEAN DEFAULT 0,         -- Si está actualmente activa
     is_enabled BOOLEAN DEFAULT 1,        -- Si está disponible para rotación
+    secondary_config_id INT NULL,        -- ID de la configuración secundaria (fallback)
     error_count INT DEFAULT 0,           -- Contador de errores
     last_error TEXT,                     -- Último error registrado
     last_used_at TIMESTAMP NULL,         -- Última vez que se usó
@@ -40,7 +41,8 @@ CREATE TABLE IF NOT EXISTS ai_configs (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (provider_id) REFERENCES ai_providers(id) ON DELETE CASCADE,
-    FOREIGN KEY (model_id) REFERENCES ai_models(id) ON DELETE CASCADE
+    FOREIGN KEY (model_id) REFERENCES ai_models(id) ON DELETE CASCADE,
+    FOREIGN KEY (secondary_config_id) REFERENCES ai_configs(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Insertar proveedores por defecto

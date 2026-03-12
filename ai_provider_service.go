@@ -28,7 +28,6 @@ func NewAIProviderService(configManager *AIConfigManager) *AIProviderService {
 
 // ProcessMessage procesa un mensaje usando el proveedor activo (sin reintentos automáticos)
 func (s *AIProviderService) ProcessMessage(systemPrompt, userMessage, realPhone string) ([]byte, error) {
-	
 	// Obtener configuración activa desde caché (optimizado para concurrencia)
 	config, err := s.configManager.GetActiveConfig()
 	if err != nil {
@@ -39,10 +38,16 @@ func (s *AIProviderService) ProcessMessage(systemPrompt, userMessage, realPhone 
 		return nil, fmt.Errorf("no hay configuración de IA activa. Ve a '⚙️ Configuración IA' y activa una")
 	}
 	
+	return s.ProcessMessageWithConfig(config, systemPrompt, userMessage, realPhone)
+}
+
+// ProcessMessageWithConfig procesa un mensaje usando una configuración específica
+func (s *AIProviderService) ProcessMessageWithConfig(config *AIConfigDB, systemPrompt, userMessage, realPhone string) ([]byte, error) {
 	fmt.Printf("🤖 Usando: %s - %s (%s)\n", config.ProviderDisplay, config.ModelDisplay, config.Name)
 	
 	// Llamar al proveedor correspondiente
 	var response []byte
+	var err error
 	switch config.ProviderName {
 	case "gemini":
 		response, err = s.callGemini(config, systemPrompt, userMessage, realPhone)
@@ -259,12 +264,76 @@ func (s *AIProviderService) callGroq(config *AIConfigDB, systemPrompt, userMessa
 	return []byte(responseText), nil
 }
 
+// calcularMaxTokensDeepSeek calcula max_tokens dinámicamente según la longitud del mensaje
+func calcularMaxTokensDeepSeek(mensaje string, baseTokens int) int {
+	// Estimar tokens: ~4 caracteres por token
+	caracteresMensaje := len(mensaje)
+	
+	// Para mensajes largos, aumentar tokens de salida
+	// Si el mensaje tiene más de 1500 caracteres, aumentar tokens proporcionalmente
+	if caracteresMensaje > 1500 {
+		// Aumentar tokens: base + (longitud_mensaje / 8)
+		// Esto da más espacio para respuestas largas
+		tokensAdicionales := caracteresMensaje / 8
+		nuevoMaxTokens := baseTokens + tokensAdicionales
+		
+		// Límite máximo para DeepSeek: 16384 tokens de salida
+		if nuevoMaxTokens > 16384 {
+			return 16384
+		}
+		// Mínimo: asegurar al menos 4096 para mensajes largos
+		if nuevoMaxTokens < 4096 && caracteresMensaje > 2000 {
+			return 4096
+		}
+		return nuevoMaxTokens
+	}
+	
+	return baseTokens
+}
+
+// esJSONIncompleto detecta si un JSON está incompleto (truncado)
+func esJSONIncompleto(jsonStr string) bool {
+	jsonStr = strings.TrimSpace(jsonStr)
+	
+	// Si está vacío, no es incompleto (es vacío)
+	if jsonStr == "" {
+		return false
+	}
+	
+	// Si empieza con [ pero no termina con ], está incompleto
+	if strings.HasPrefix(jsonStr, "[") && !strings.HasSuffix(jsonStr, "]") {
+		return true
+	}
+	
+	// Si empieza con { pero no termina con }, está incompleto
+	if strings.HasPrefix(jsonStr, "{") && !strings.HasSuffix(jsonStr, "}") {
+		return true
+	}
+	
+	// Contar llaves y corchetes para verificar balance
+	abrirCorchetes := strings.Count(jsonStr, "[")
+	cerrarCorchetes := strings.Count(jsonStr, "]")
+	abrirLlaves := strings.Count(jsonStr, "{")
+	cerrarLlaves := strings.Count(jsonStr, "}")
+	
+	if abrirCorchetes != cerrarCorchetes || abrirLlaves != cerrarLlaves {
+		return true
+	}
+	
+	return false
+}
+
 // callDeepSeek llama a la API de DeepSeek
 func (s *AIProviderService) callDeepSeek(config *AIConfigDB, systemPrompt, userMessage, realPhone string) ([]byte, error) {
 	// Obtener fecha actual en zona horaria argentina (UTC-3)
 	argLocation, _ := time.LoadLocation("America/Argentina/Buenos_Aires")
 	currentDate := time.Now().In(argLocation).Format("02/01/2006") // DD/MM/YYYY
 	currentDateTime := time.Now().In(argLocation).Format("02/01/2006 15:04") // DD/MM/YYYY HH:MM
+	
+	// Calcular max_tokens dinámicamente para mensajes largos
+	maxTokens := calcularMaxTokensDeepSeek(userMessage, config.MaxTokens)
+	fmt.Printf("📊 [DeepSeek] Max tokens calculado: %d (base: %d, mensaje: %d caracteres)\n", 
+		maxTokens, config.MaxTokens, len(userMessage))
 	
 	// DeepSeek usa formato compatible con OpenAI
 	request := map[string]interface{}{
@@ -280,7 +349,7 @@ func (s *AIProviderService) callDeepSeek(config *AIConfigDB, systemPrompt, userM
 			},
 		},
 		"temperature": 0.7,
-		"max_tokens": config.MaxTokens,
+		"max_tokens": maxTokens, // Usar el valor calculado dinámicamente
 	}
 	
 	jsonData, err := json.Marshal(request)
@@ -336,6 +405,7 @@ func (s *AIProviderService) callDeepSeek(config *AIConfigDB, systemPrompt, userM
 			Message struct {
 				Content string `json:"content"`
 			} `json:"message"`
+			FinishReason string `json:"finish_reason"` // "stop", "length", "content_filter"
 		} `json:"choices"`
 	}
 	
@@ -348,7 +418,83 @@ func (s *AIProviderService) callDeepSeek(config *AIConfigDB, systemPrompt, userM
 	}
 	
 	responseText := deepseekResp.Choices[0].Message.Content
+	finishReason := deepseekResp.Choices[0].FinishReason
+	
 	fmt.Printf("📦 Respuesta recibida: %d bytes\n", len(responseText))
+	fmt.Printf("🏁 Finish reason: %s\n", finishReason)
+	
+	// Detectar si está truncado
+	esTruncado := finishReason == "length" || esJSONIncompleto(responseText)
+	
+	if esTruncado {
+		fmt.Printf("⚠️ [DeepSeek] Respuesta truncada detectada (finish_reason: %s)\n", finishReason)
+		
+		// Si aún no hemos aumentado mucho los tokens, reintentar con más
+		if maxTokens < 16384 {
+			nuevoMaxTokens := maxTokens * 2
+			if nuevoMaxTokens > 16384 {
+				nuevoMaxTokens = 16384
+			}
+			fmt.Printf("🔄 [DeepSeek] Reintentando con %d tokens de salida...\n", nuevoMaxTokens)
+			
+			// Actualizar maxTokens en el request
+			request["max_tokens"] = nuevoMaxTokens
+			
+			// Reintentar la llamada
+			jsonDataRetry, err := json.Marshal(request)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal retry request: %v", err)
+			}
+			
+			reqRetry, err := http.NewRequest("POST", "https://api.deepseek.com/v1/chat/completions", bytes.NewBuffer(jsonDataRetry))
+			if err != nil {
+				return nil, fmt.Errorf("failed to create retry request: %v", err)
+			}
+			
+			reqRetry.Header.Set("Content-Type", "application/json")
+			reqRetry.Header.Set("Authorization", "Bearer "+config.APIKey)
+			
+			startTimeRetry := time.Now()
+			respRetry, err := s.client.Do(reqRetry)
+			if err != nil {
+				return nil, fmt.Errorf("failed to retry request: %v", err)
+			}
+			defer respRetry.Body.Close()
+			
+			elapsedRetry := time.Since(startTimeRetry).Seconds()
+			fmt.Printf("⏱️ Respuesta del reintento recibida en %.2f segundos\n", elapsedRetry)
+			
+			bodyRetry, err := io.ReadAll(respRetry.Body)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read retry response: %v", err)
+			}
+			
+			if respRetry.StatusCode != http.StatusOK {
+				return nil, fmt.Errorf("deepseek API error on retry %d: %s", respRetry.StatusCode, string(bodyRetry))
+			}
+			
+			// Parsear respuesta del reintento
+			if err := json.Unmarshal(bodyRetry, &deepseekResp); err != nil {
+				return nil, fmt.Errorf("failed to parse DeepSeek retry response: %v", err)
+			}
+			
+			if len(deepseekResp.Choices) == 0 {
+				return nil, fmt.Errorf("empty response from DeepSeek retry")
+			}
+			
+			responseText = deepseekResp.Choices[0].Message.Content
+			finishReason = deepseekResp.Choices[0].FinishReason
+			
+			fmt.Printf("📦 Respuesta del reintento: %d bytes, finish_reason: %s\n", len(responseText), finishReason)
+			
+			// Si aún está truncado después del reintento, devolver error
+			if finishReason == "length" || esJSONIncompleto(responseText) {
+				return nil, fmt.Errorf("respuesta aún truncada después de aumentar tokens. Considera dividir el mensaje o usar un modelo con mayor capacidad")
+			}
+		} else {
+			return nil, fmt.Errorf("respuesta truncada y ya se usó el máximo de tokens permitido (16384)")
+		}
+	}
 	
 	return []byte(responseText), nil
 }
