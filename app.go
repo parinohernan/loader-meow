@@ -26,6 +26,7 @@ type SenderInfoResponse struct {
 	MessageCount  int       `json:"message_count"`
 	LastMessage   time.Time `json:"last_message"`
 	LastGroupName string    `json:"last_group_name"`
+	LastChatJID   string    `json:"last_chat_jid"`
 }
 
 // NewApp crea una nueva instancia de App
@@ -278,6 +279,7 @@ func (a *App) GetSendersForAssociation() ([]SenderInfoResponse, error) {
 			MessageCount:  sender.MessageCount,
 			LastMessage:   sender.LastMessage,
 			LastGroupName: sender.LastGroupName,
+			LastChatJID:   sender.LastChatJID,
 		}
 	}
 
@@ -331,6 +333,15 @@ func (a *App) DeleteMessagesBySenderPhone(senderPhone string) error {
 	}
 
 	return a.waService.DeleteMessagesBySenderPhone(senderPhone)
+}
+
+// DeleteMessagesBySendersInChat elimina mensajes de varios remitentes solo en un chat (p. ej. un grupo).
+func (a *App) DeleteMessagesBySendersInChat(chatJID string, senderPhones []string) error {
+	if a.waService == nil {
+		return fmt.Errorf("WhatsApp service not initialized")
+	}
+
+	return a.waService.DeleteMessagesBySendersInChat(chatJID, senderPhones)
 }
 
 // ===== FUNCIONES PARA PROCESAMIENTO CON IA =====

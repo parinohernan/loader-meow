@@ -705,6 +705,41 @@ func (store *MessageStore) DeleteMessagesBySenderPhone(senderPhone string) error
 	return err
 }
 
+// DeleteMessagesBySendersInChat elimina mensajes de varios remitentes solo en un chat concreto.
+func (store *MessageStore) DeleteMessagesBySendersInChat(chatJID string, senderPhones []string) error {
+	if chatJID == "" || len(senderPhones) == 0 {
+		return nil
+	}
+	phones := make([]string, 0, len(senderPhones))
+	seen := make(map[string]struct{}, len(senderPhones))
+	for _, p := range senderPhones {
+		if p == "" {
+			continue
+		}
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		phones = append(phones, p)
+	}
+	if len(phones) == 0 {
+		return nil
+	}
+	placeholders := ""
+	args := make([]interface{}, 0, 1+len(phones))
+	args = append(args, chatJID)
+	for i, p := range phones {
+		if i > 0 {
+			placeholders += ","
+		}
+		placeholders += "?"
+		args = append(args, p)
+	}
+	q := `DELETE FROM messages WHERE chat_jid = ? AND sender_phone IN (` + placeholders + `)`
+	_, err := store.db.Exec(q, args...)
+	return err
+}
+
 // UpdateMessageContent actualiza el contenido de un mensaje
 func (store *MessageStore) UpdateMessageContent(messageID, chatJID, newContent string) error {
 	_, err := store.db.Exec(
@@ -1191,6 +1226,7 @@ type SenderInfo struct {
 	MessageCount  int       `json:"message_count"`
 	LastMessage   time.Time `json:"last_message"`
 	LastGroupName string    `json:"last_group_name"`
+	LastChatJID   string    `json:"last_chat_jid"`
 }
 
 // PhoneAssociationRequest representa una solicitud de asociación
@@ -1515,7 +1551,12 @@ func (s *WhatsAppService) GetSendersForAssociation() ([]SenderInfo, error) {
 				 JOIN chats c ON m2.chat_jid = c.jid 
 				 WHERE m2.sender_phone = m.sender_phone 
 				 ORDER BY m2.timestamp DESC 
-				 LIMIT 1) as last_group_name
+				 LIMIT 1) as last_group_name,
+				(SELECT m2.chat_jid 
+				 FROM messages m2 
+				 WHERE m2.sender_phone = m.sender_phone 
+				 ORDER BY m2.timestamp DESC 
+				 LIMIT 1) as last_chat_jid
 			FROM messages m
 			WHERE m.sender_phone != '' AND m.sender_phone IS NOT NULL
 			GROUP BY m.sender_phone, m.sender_name
@@ -1528,7 +1569,8 @@ func (s *WhatsAppService) GetSendersForAssociation() ([]SenderInfo, error) {
 				pa.display_name as sender_name,
 				0 as message_count,
 				NULL as last_message,
-				'' as last_group_name
+				'' as last_group_name,
+				'' as last_chat_jid
 			FROM phone_associations pa
 			WHERE pa.sender_phone NOT IN (
 				SELECT DISTINCT sender_phone FROM messages WHERE sender_phone IS NOT NULL
@@ -1540,7 +1582,8 @@ func (s *WhatsAppService) GetSendersForAssociation() ([]SenderInfo, error) {
 			COALESCE(pa.real_phone, '') as real_phone,
 			s.message_count,
 			COALESCE(s.last_message, '') as last_message,
-			COALESCE(s.last_group_name, '') as last_group_name
+			COALESCE(s.last_group_name, '') as last_group_name,
+			COALESCE(s.last_chat_jid, '') as last_chat_jid
 		FROM all_senders s
 		LEFT JOIN phone_associations pa ON s.sender_phone = pa.sender_phone
 		ORDER BY s.message_count DESC, s.last_message DESC
@@ -1566,6 +1609,7 @@ func (s *WhatsAppService) GetSendersForAssociation() ([]SenderInfo, error) {
 			&sender.MessageCount,
 			&lastMessageStr,
 			&sender.LastGroupName,
+			&sender.LastChatJID,
 		)
 		if err != nil {
 			s.logger.Errorf("Error al escanear sender: %v", err)
@@ -1652,6 +1696,11 @@ func (s *WhatsAppService) DeleteMessage(messageID, chatJID string) error {
 // DeleteMessagesBySenderPhone elimina todos los mensajes de un remitente específico
 func (s *WhatsAppService) DeleteMessagesBySenderPhone(senderPhone string) error {
 	return s.messageStore.DeleteMessagesBySenderPhone(senderPhone)
+}
+
+// DeleteMessagesBySendersInChat elimina mensajes de varios remitentes solo en un chat.
+func (s *WhatsAppService) DeleteMessagesBySendersInChat(chatJID string, senderPhones []string) error {
+	return s.messageStore.DeleteMessagesBySendersInChat(chatJID, senderPhones)
 }
 
 // GetRealPhone obtiene el número real asociado a un sender_phone

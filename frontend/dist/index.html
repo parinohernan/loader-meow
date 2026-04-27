@@ -1250,6 +1250,15 @@
         top: 0;
         z-index: 10;
         border-left: 4px solid #20ba5a;
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .group-header-main {
+        flex: 1;
+        min-width: 120px;
       }
 
       .group-header .group-count {
@@ -1257,7 +1266,22 @@
         padding: 2px 8px;
         border-radius: 12px;
         font-size: 12px;
-        margin-left: 10px;
+      }
+
+      .group-bulk-delete-btn {
+        margin-left: auto;
+        background: rgba(0, 0, 0, 0.25);
+        color: #fff;
+        border: 1px solid rgba(255, 255, 255, 0.5);
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .group-bulk-delete-btn:hover {
+        background: rgba(0, 0, 0, 0.4);
       }
 
       .group-section {
@@ -3138,6 +3162,16 @@
             btn.hasListener = true;
           }
         });
+
+        const assocTbody = document.getElementById("associationsTableBody");
+        if (assocTbody && !assocTbody.groupBulkDelegated) {
+          assocTbody.addEventListener("click", async (e) => {
+            const btn = e.target.closest(".group-bulk-delete-btn");
+            if (!btn || !btn.dataset.bulk) return;
+            await deleteUnassociatedGroupMessages(btn.dataset.bulk);
+          });
+          assocTbody.groupBulkDelegated = true;
+        }
       }
 
       function renderAssociationsTable() {
@@ -3180,33 +3214,63 @@
           return;
         }
 
-        // Agrupar por nombre de grupo
-        const groupedData = {};
+        // Agrupar por chat (JID) cuando exista, si no por nombre (evita mezclar grupos homónimos)
+        const groupMap = new Map();
         filteredData.forEach((sender) => {
-          const groupName = sender.last_group_name || "Sin grupo";
-          if (!groupedData[groupName]) {
-            groupedData[groupName] = [];
+          const key = sender.last_chat_jid
+            ? "jid:" + sender.last_chat_jid
+            : "name:" + (sender.last_group_name || "Sin grupo");
+          if (!groupMap.has(key)) {
+            groupMap.set(key, {
+              displayName: sender.last_group_name || "Sin grupo",
+              chatJID: sender.last_chat_jid || "",
+              senders: [],
+            });
           }
-          groupedData[groupName].push(sender);
+          groupMap.get(key).senders.push(sender);
         });
 
-        // Ordenar grupos por cantidad de mensajes (descendente)
-        const sortedGroups = Object.keys(groupedData).sort((a, b) => {
-          const aTotal = groupedData[a].reduce((sum, sender) => sum + sender.message_count, 0);
-          const bTotal = groupedData[b].reduce((sum, sender) => sum + sender.message_count, 0);
-          return bTotal - aTotal;
-        });
+        const sortedGroups = Array.from(groupMap.entries())
+          .map(([key, g]) => ({ key, ...g }))
+          .sort((a, b) => {
+            const aTotal = a.senders.reduce((sum, s) => sum + s.message_count, 0);
+            const bTotal = b.senders.reduce((sum, s) => sum + s.message_count, 0);
+            return bTotal - aTotal;
+          });
 
         // Renderizar cada grupo
-        sortedGroups.forEach((groupName) => {
-          const groupSenders = groupedData[groupName];
-          
+        sortedGroups.forEach((group) => {
+          const groupSenders = group.senders;
+          const groupTitle = group.displayName;
+          const noAssocPhones = groupSenders
+            .filter(
+              (s) =>
+                (!s.real_phone || s.real_phone === "") &&
+                s.message_count > 0 &&
+                s.sender_phone
+            )
+            .map((s) => s.sender_phone);
+          const showGroupBulk =
+            currentFilter === "no-association" &&
+            group.chatJID &&
+            noAssocPhones.length > 0;
+          const bulkPayload = showGroupBulk
+            ? encodeURIComponent(JSON.stringify({ chatJID: group.chatJID, phones: noAssocPhones }))
+            : "";
+
           // Crear header del grupo
           const groupHeader = document.createElement("tr");
           groupHeader.innerHTML = `
             <td colspan="7" class="group-header">
-              📱 ${groupName}
+              <span class="group-header-main">📱 ${groupTitle}</span>
               <span class="group-count">${groupSenders.length}</span>
+              ${
+                showGroupBulk
+                  ? `<button type="button" class="group-bulk-delete-btn" data-bulk="${bulkPayload}" title="Eliminar en BD todos los mensajes de remitentes sin asociación en este grupo (solo este chat)">
+                  🗑️ Eliminar mensajes del grupo (sin asoc.)
+                </button>`
+                  : ""
+              }
             </td>
           `;
           tbody.appendChild(groupHeader);
@@ -3491,6 +3555,45 @@
           console.error("Error deleting message and association:", error);
           const errorMsg = error?.message || error?.toString() || "Error desconocido";
           showNotification("Error al eliminar: " + errorMsg, "error");
+        }
+      }
+
+      async function deleteUnassociatedGroupMessages(encodedPayload) {
+        let payload;
+        try {
+          payload = JSON.parse(decodeURIComponent(encodedPayload));
+        } catch (err) {
+          showNotification("No se pudo leer la selección del grupo.", "error");
+          return;
+        }
+        const chatJID = payload.chatJID;
+        const phones = payload.phones;
+        if (!chatJID || !phones || !phones.length) {
+          return;
+        }
+        const n = phones.length;
+        if (
+          !confirm(
+            `¿Eliminar todos los mensajes en este grupo de WhatsApp para ${n} remitente(s) sin asociación?\n\nSolo se borran mensajes de este chat en la base de datos. Los mensajes del mismo contacto en otros grupos o chats no se eliminan. Las asociaciones guardadas no se modifican.\n\nEsta acción no se puede deshacer.`
+          )
+        ) {
+          return;
+        }
+        try {
+          await window.go.main.App.DeleteMessagesBySendersInChat(
+            chatJID,
+            phones
+          );
+          showNotification(
+            "✅ Mensajes eliminados para los remitentes indicados en este grupo",
+            "success"
+          );
+          await loadAssociations();
+        } catch (error) {
+          console.error("Error bulk delete grupo:", error);
+          const errorMsg =
+            error?.message || error?.toString() || "Error desconocido";
+          showNotification("Error al eliminar mensajes del grupo: " + errorMsg, "error");
         }
       }
 

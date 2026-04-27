@@ -16,6 +16,9 @@ import (
 type SupabaseService struct {
 	url                 string
 	apiKey              string
+	secondaryUrl        string
+	secondaryApiKey     string
+	secondaryEnabled    bool
 	client              *http.Client
 	systemConfigManager *SystemConfigManager
 }
@@ -125,19 +128,32 @@ type FormaPago struct {
 // NewSupabaseService crea una nueva instancia del servicio de Supabase
 func NewSupabaseService(systemConfigManager *SystemConfigManager) *SupabaseService {
 	var url, apiKey string
+	var secondaryUrl, secondaryApiKey string
+	var secondaryEnabled bool
 	
 	if systemConfigManager != nil {
 		url = systemConfigManager.GetSupabaseURL()
 		apiKey = systemConfigManager.GetSupabaseAPIKey()
+		secondaryUrl = systemConfigManager.GetSupabaseSecondaryURL()
+		secondaryApiKey = systemConfigManager.GetSupabaseSecondaryAPIKey()
+		secondaryEnabled = systemConfigManager.IsSupabaseSecondaryEnabled()
 	} else {
 		// Fallback a valores por defecto
 		url = "https://ikiusmdtltakhmmlljsp.supabase.co"
 		apiKey = getEnvAI("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlraXVzbWR0bHRha2htbWxsanNwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQ2MjkyMzEsImV4cCI6MjA1MDIwNTIzMX0.q6NMMUK2ONGFs-b10XZySVlQiCXSLsjZbtBZyUTiVjc")
+		secondaryEnabled = false
+	}
+	
+	if secondaryEnabled {
+		fmt.Printf("🔄 Supabase secundario habilitado: %s\n", secondaryUrl)
 	}
 	
 	return &SupabaseService{
 		url:                 url,
 		apiKey:              apiKey,
+		secondaryUrl:        secondaryUrl,
+		secondaryApiKey:     secondaryApiKey,
+		secondaryEnabled:    secondaryEnabled,
 		systemConfigManager: systemConfigManager,
 		client: &http.Client{
 			Timeout: 30 * time.Second,
@@ -733,7 +749,7 @@ func (s *SupabaseService) obtenerCoordenadasGoogle(direccion string) (*Coordenad
 	return coords, nil
 }
 
-// insertarUbicacion inserta una nueva ubicación en Supabase
+// insertarUbicacion inserta una nueva ubicación en Supabase (primaria y secundaria si está habilitada)
 func (s *SupabaseService) insertarUbicacion(ubicacion Ubicacion) (string, error) {
 	// Usar select=id para obtener solo el ID en la respuesta (igual que JS)
 	url := fmt.Sprintf("%s/rest/v1/ubicaciones?select=id", s.url)
@@ -776,29 +792,94 @@ func (s *SupabaseService) insertarUbicacion(ubicacion Ubicacion) (string, error)
 	}
 	
 	// Parsear respuesta - puede ser array o objeto único
+	var primaryID string
+	
 	// Intentar primero como array
 	var ubicaciones []map[string]interface{}
 	if err := json.Unmarshal(body, &ubicaciones); err == nil && len(ubicaciones) > 0 {
-		// Obtener el ID de la respuesta
 		if id, ok := ubicaciones[0]["id"].(string); ok && id != "" {
 			fmt.Printf("✅ ID obtenido (array): %s\n", id)
-			return id, nil
+			primaryID = id
 		}
 	}
 	
-	// Intentar como objeto único (.single() en JS)
-	var ubicacionSingle map[string]interface{}
-	if err := json.Unmarshal(body, &ubicacionSingle); err == nil {
-		if id, ok := ubicacionSingle["id"].(string); ok && id != "" {
-			fmt.Printf("✅ ID obtenido (single): %s\n", id)
-			return id, nil
+	// Intentar como objeto único (.single() en JS) si no se obtuvo ID
+	if primaryID == "" {
+		var ubicacionSingle map[string]interface{}
+		if err := json.Unmarshal(body, &ubicacionSingle); err == nil {
+			if id, ok := ubicacionSingle["id"].(string); ok && id != "" {
+				fmt.Printf("✅ ID obtenido (single): %s\n", id)
+				primaryID = id
+			}
 		}
 	}
 	
-	return "", fmt.Errorf("could not extract ID from response: %s", string(body))
+	if primaryID == "" {
+		return "", fmt.Errorf("could not extract ID from response: %s", string(body))
+	}
+	
+	// Duplicar en BD secundaria si está habilitada (sincrónico para garantizar consistencia)
+	if s.secondaryEnabled && s.secondaryUrl != "https://bmydflvqbiafyjfxnfsr.supabase.co" && s.secondaryApiKey != "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJteWRmbHZxYmlhZnlqZnhuZnNyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMzg2NzIsImV4cCI6MjA5MjgxNDY3Mn0.CKC-SwHSmqxefevvF4zCF8kpkrXgtttDg7siZYR83dM" {
+		s.insertarUbicacionSecundaria(ubicacion, primaryID)
+	}
+	
+	return primaryID, nil
 }
 
-// insertarCarga inserta una nueva carga en Supabase
+// insertarUbicacionSecundaria inserta una ubicación en la BD secundaria (no bloquea, solo registra errores)
+func (s *SupabaseService) insertarUbicacionSecundaria(ubicacion Ubicacion, primaryID string) {
+	url := fmt.Sprintf("%s/rest/v1/ubicaciones", s.secondaryUrl)
+	
+	ubicacionData := map[string]interface{}{
+		"id":        primaryID, // Mantener el mismo ID que en la BD primaria
+		"direccion": ubicacion.Direccion,
+		"lat":       ubicacion.Lat,
+		"lng":       ubicacion.Lng,
+	}
+	
+	jsonData, err := json.Marshal(ubicacionData)
+	if err != nil {
+		fmt.Printf("⚠️ [Secundaria] Error serializando ubicación %s: %v\n", primaryID, err)
+		s.incrementarErroresSecundaria()
+		return
+	}
+	
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		fmt.Printf("⚠️ [Secundaria] Error creando request para ubicación %s: %v\n", primaryID, err)
+		s.incrementarErroresSecundaria()
+		return
+	}
+	
+	req.Header.Set("apikey", s.secondaryApiKey)
+	req.Header.Set("Authorization", "Bearer "+s.secondaryApiKey)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Prefer", "return=minimal")
+	
+	resp, err := s.client.Do(req)
+	if err != nil {
+		fmt.Printf("⚠️ [Secundaria] Error enviando ubicación %s: %v\n", primaryID, err)
+		s.incrementarErroresSecundaria()
+		return
+	}
+	defer resp.Body.Close()
+	
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode == http.StatusConflict {
+			// Si ya existe con el mismo ID en la secundaria, la réplica está consistente.
+			fmt.Printf("ℹ️ [Secundaria] Ubicación %s ya existía, se mantiene consistencia\n", primaryID)
+			return
+		}
+		fmt.Printf("⚠️ [Secundaria] Error insertando ubicación %s: %d - %s\n", primaryID, resp.StatusCode, string(body))
+		s.incrementarErroresSecundaria()
+		return
+	}
+	
+	fmt.Printf("✅ [Secundaria] Ubicación %s duplicada exitosamente\n", primaryID)
+}
+
+// insertarCarga inserta una nueva carga en Supabase (primaria y secundaria si está habilitada)
 func (s *SupabaseService) insertarCarga(carga SupabaseCarga) (string, error) {
 	url := fmt.Sprintf("%s/rest/v1/cargas", s.url)
 	
@@ -833,13 +914,108 @@ func (s *SupabaseService) insertarCarga(carga SupabaseCarga) (string, error) {
 		return "", err
 	}
 	
+	var primaryID string
 	if len(cargas) > 0 {
 		if id, ok := cargas[0]["id"].(string); ok {
-			return id, nil
+			primaryID = id
 		}
 	}
 	
-	return "", fmt.Errorf("no carga ID returned")
+	if primaryID == "" {
+		return "", fmt.Errorf("no carga ID returned")
+	}
+	
+	// Duplicar en BD secundaria si está habilitada (sincrónico para garantizar consistencia)
+	if s.secondaryEnabled && s.secondaryUrl != "" && s.secondaryApiKey != "" {
+		s.insertarCargaSecundaria(carga, primaryID)
+	}
+	
+	return primaryID, nil
+}
+
+// insertarCargaSecundaria inserta una carga en la BD secundaria (no bloquea, solo registra errores)
+func (s *SupabaseService) insertarCargaSecundaria(carga SupabaseCarga, primaryID string) {
+	url := fmt.Sprintf("%s/rest/v1/cargas", s.secondaryUrl)
+	
+	// Mantener el mismo ID que en la BD primaria para réplica exacta
+	cargaData := map[string]interface{}{
+		"id":                 primaryID,
+		"dador_id":           carga.DadorID,
+		"peso":               carga.Peso,
+		"ubicacioninicial_id": carga.UbicacionInicial,
+		"ubicacionfinal_id":  carga.UbicacionFinal,
+		"telefonodador":      carga.TelefonoDador,
+		"puntoreferencia":    carga.PuntoReferencia,
+		"material_id":        carga.MaterialID,
+		"presentacion_id":    carga.PresentacionID,
+		"valorviaje":         carga.ValorViaje,
+		"pagopor":            carga.PagoPor,
+		"otropagopor":        carga.OtroPagoPor,
+		"fechacarga":         carga.FechaCarga,
+		"fechadescarga":      carga.FechaDescarga,
+		"formadepago_id":     carga.FormaDePagoID,
+		"email":              carga.Email,
+		"tipo_equipo":        carga.TipoEquipo,
+		"observaciones":      carga.Observaciones,
+	}
+
+	jsonData, err := json.Marshal(cargaData)
+	if err != nil {
+		fmt.Printf("⚠️ [Secundaria] Error serializando carga %s: %v\n", primaryID, err)
+		s.incrementarErroresSecundaria()
+		return
+	}
+	
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		fmt.Printf("⚠️ [Secundaria] Error creando request para carga %s: %v\n", primaryID, err)
+		s.incrementarErroresSecundaria()
+		return
+	}
+	
+	req.Header.Set("apikey", s.secondaryApiKey)
+	req.Header.Set("Authorization", "Bearer "+s.secondaryApiKey)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Prefer", "return=minimal")
+	
+	resp, err := s.client.Do(req)
+	if err != nil {
+		fmt.Printf("⚠️ [Secundaria] Error enviando carga %s: %v\n", primaryID, err)
+		s.incrementarErroresSecundaria()
+		return
+	}
+	defer resp.Body.Close()
+	
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode == http.StatusConflict {
+			// Si ya existe con el mismo ID en la secundaria, la réplica está consistente.
+			fmt.Printf("ℹ️ [Secundaria] Carga %s ya existía, se mantiene consistencia\n", primaryID)
+			return
+		}
+		fmt.Printf("⚠️ [Secundaria] Error insertando carga %s: %d - %s\n", primaryID, resp.StatusCode, string(body))
+		s.incrementarErroresSecundaria()
+		return
+	}
+	
+	fmt.Printf("✅ [Secundaria] Carga %s duplicada exitosamente\n", primaryID)
+}
+
+// incrementarErroresSecundaria incrementa el contador de errores de la BD secundaria
+func (s *SupabaseService) incrementarErroresSecundaria() {
+	if s.systemConfigManager == nil {
+		return
+	}
+	
+	contadorActual := 0
+	valorActual, err := s.systemConfigManager.GetConfig("supabase_secondary_errors")
+	if err == nil {
+		if val, err := strconv.Atoi(valorActual); err == nil {
+			contadorActual = val
+		}
+	}
+	
+	s.systemConfigManager.SetConfig("supabase_secondary_errors", strconv.Itoa(contadorActual+1))
 }
 
 // Funciones auxiliares para mapear IDs
@@ -1118,4 +1294,42 @@ func (s *SupabaseService) ResetearContadorCargasRepetidas() error {
 	}
 	
 	return s.systemConfigManager.SetConfig("cargas_repetidas_count", "0")
+}
+
+// ObtenerErroresSecundaria obtiene el contador de errores de la BD secundaria
+func (s *SupabaseService) ObtenerErroresSecundaria() (int, error) {
+	if s.systemConfigManager == nil {
+		return 0, fmt.Errorf("system config manager not available")
+	}
+	
+	valor, err := s.systemConfigManager.GetConfig("supabase_secondary_errors")
+	if err != nil {
+		return 0, nil
+	}
+	
+	contador, err := strconv.Atoi(valor)
+	if err != nil {
+		return 0, nil
+	}
+	
+	return contador, nil
+}
+
+// ResetearErroresSecundaria resetea el contador de errores de la BD secundaria a 0
+func (s *SupabaseService) ResetearErroresSecundaria() error {
+	if s.systemConfigManager == nil {
+		return fmt.Errorf("system config manager not available")
+	}
+	
+	return s.systemConfigManager.SetConfig("supabase_secondary_errors", "0")
+}
+
+// IsSecondaryEnabled verifica si la BD secundaria está habilitada
+func (s *SupabaseService) IsSecondaryEnabled() bool {
+	return s.secondaryEnabled
+}
+
+// GetSecondaryURL obtiene la URL de la BD secundaria
+func (s *SupabaseService) GetSecondaryURL() string {
+	return s.secondaryUrl
 }

@@ -104,5 +104,8 @@ CREATE TABLE IF NOT EXISTS system_configs (
 INSERT IGNORE INTO system_configs (config_key, config_value, description) VALUES
     ('google_maps_api_key', 'AIzaSyASe9Id-6Dr6lxr5mCb7O3l2HlmNrY-mRU', 'API Key para Google Maps Geocoding'),
     ('supabase_api_key', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlraXVzbWR0bHRha2htbWxsanNwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQ2MjkyMzEsImV4cCI6MjA1MDIwNTIzMX0.q6NMMUK2ONGFs-b10XZySVlQiCXSLsjZbtBZyUTiVjc', 'API Key para Supabase'),
-    ('supabase_url', 'https://ikiusmdtltakhmmlljsp.supabase.co', 'URL del proyecto Supabase');
+    ('supabase_url', 'https://ikiusmdtltakhmmlljsp.supabase.co', 'URL del proyecto Supabase'),
+    ('supabase_secondary_url', '', 'URL del proyecto Supabase secundario (backup)'),
+    ('supabase_secondary_api_key', '', 'API Key del proyecto Supabase secundario'),
+    ('supabase_secondary_enabled', 'false', 'Habilitar duplicación a BD secundaria (true/false)');
 

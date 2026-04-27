@@ -143,3 +143,30 @@ func (m *SystemConfigManager) GetSupabaseURL() string {
 	return url
 }
 
+// GetSupabaseSecondaryURL obtiene la URL del proyecto Supabase secundario
+func (m *SystemConfigManager) GetSupabaseSecondaryURL() string {
+	url, err := m.GetConfig("supabase_secondary_url")
+	if err != nil {
+		return ""
+	}
+	return url
+}
+
+// GetSupabaseSecondaryAPIKey obtiene la API key del proyecto Supabase secundario
+func (m *SystemConfigManager) GetSupabaseSecondaryAPIKey() string {
+	key, err := m.GetConfig("supabase_secondary_api_key")
+	if err != nil {
+		return ""
+	}
+	return key
+}
+
+// IsSupabaseSecondaryEnabled verifica si la BD secundaria está habilitada
+func (m *SystemConfigManager) IsSupabaseSecondaryEnabled() bool {
+	enabled, err := m.GetConfig("supabase_secondary_enabled")
+	if err != nil {
+		return false
+	}
+	return enabled == "true" || enabled == "1"
+}
+
