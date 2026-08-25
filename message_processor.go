@@ -2,13 +2,21 @@ package main
 
 import (
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
+
+// MessageMediaDownloader descarga media de mensajes de WhatsApp
+type MessageMediaDownloader interface {
+	DownloadMessageMedia(messageID, chatJID string) (string, error)
+}
 
 // MessageProcessor orquesta el procesamiento de mensajes con IA
 type MessageProcessor struct {
@@ -16,9 +24,12 @@ type MessageProcessor struct {
 	aiService         *AIService // Mantener por compatibilidad
 	aiProviderService *AIProviderService // Nuevo servicio multi-proveedor
 	aiConfigManager   *AIConfigManager
+	ocrService        *OCRService
 	supabaseService   *SupabaseService
+	blacklistManager  *MessageBlacklistManager
 	systemPrompt      string
 	logger            waLog.Logger
+	mediaDownloader   MessageMediaDownloader
 }
 
 // ProcessingResult representa el resultado del procesamiento de un mensaje
@@ -35,10 +46,14 @@ type ProcessingResult struct {
 	SupabaseIDs        []string  `json:"supabase_ids"`
 	ProcessedAt        time.Time `json:"processed_at"`
 	ProcessingAttempts int       `json:"processing_attempts"`
+	ExtractedText      string    `json:"extracted_text"`
+	IsFromImage        bool      `json:"is_from_image"`
+	IsDuplicate        bool      `json:"is_duplicate"`
+	DuplicateOfMessageID string  `json:"duplicate_of_message_id,omitempty"`
 }
 
 // NewMessageProcessor crea una nueva instancia del procesador de mensajes
-func NewMessageProcessor(messageStore *MessageStore, logger waLog.Logger, keysManager *APIKeysManager, aiConfigManager *AIConfigManager, systemConfigManager *SystemConfigManager) (*MessageProcessor, error) {
+func NewMessageProcessor(messageStore *MessageStore, logger waLog.Logger, keysManager *APIKeysManager, aiConfigManager *AIConfigManager, ocrConfigManager *OCRConfigManager, systemConfigManager *SystemConfigManager) (*MessageProcessor, error) {
 	// Cargar system prompt
 	systemPrompt, err := loadSystemPrompt()
 	if err != nil {
@@ -54,19 +69,44 @@ func NewMessageProcessor(messageStore *MessageStore, logger waLog.Logger, keysMa
 	
 	// Inicializar nuevo servicio multi-proveedor
 	aiProviderService := NewAIProviderService(aiConfigManager)
-	
+
+	// Inicializar servicio OCR
+	ocrService := NewOCRService(ocrConfigManager)
+
 	// Inicializar servicio de Supabase con system config manager
 	supabaseService := NewSupabaseService(systemConfigManager)
-	
+	blacklistManager := NewMessageBlacklistManager(systemConfigManager)
+
 	return &MessageProcessor{
 		messageStore:      messageStore,
 		aiService:         aiService,
 		aiProviderService: aiProviderService,
 		aiConfigManager:   aiConfigManager,
+		ocrService:        ocrService,
 		supabaseService:   supabaseService,
+		blacklistManager:  blacklistManager,
 		systemPrompt:      systemPrompt,
 		logger:            logger,
 	}, nil
+}
+
+// SetMediaDownloader configura el descargador de media de WhatsApp
+func (p *MessageProcessor) SetMediaDownloader(downloader MessageMediaDownloader) {
+	p.mediaDownloader = downloader
+}
+
+func (p *MessageProcessor) GetBlacklistConfig() MessageBlacklistConfig {
+	if p.blacklistManager == nil {
+		return MessageBlacklistConfig{Words: defaultBlacklistWords()}
+	}
+	return p.blacklistManager.GetConfig()
+}
+
+func (p *MessageProcessor) SetBlacklistConfig(enabled bool, wordsInput string) error {
+	if p.blacklistManager == nil {
+		return fmt.Errorf("blacklist manager not initialized")
+	}
+	return p.blacklistManager.SaveConfig(enabled, parseWordsInput(wordsInput))
 }
 
 // cleanMessageContent limpia el contenido del mensaje eliminando caracteres especiales
@@ -107,57 +147,246 @@ func isPermanentError(errorMsg string) bool {
 	return false
 }
 
-// ProcessPendingMessages procesa mensajes pendientes
-func (p *MessageProcessor) ProcessPendingMessages(limit int) ([]ProcessingResult, error) {
-	// Obtener mensajes procesables
-	messages, err := p.messageStore.GetProcessableMessages(limit)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get processable messages: %v", err)
+func (p *MessageProcessor) applyBlacklistFilter(result ProcessingResult, messageID, content string) (ProcessingResult, bool) {
+	if p.blacklistManager == nil {
+		return result, false
 	}
-	
-	if len(messages) == 0 {
+	if word, matched := p.blacklistManager.Match(content); matched {
+		result.Status = "success"
+		result.ErrorMessage = fmt.Sprintf("Descartado por blacklist: contiene '%s'", word)
+		p.logger.Infof("Mensaje %s descartado por blacklist: %s", messageID, word)
+		return result, true
+	}
+	return result, false
+}
+
+// ProcessPendingMessages procesa mensajes pendientes (texto e imágenes)
+func (p *MessageProcessor) ProcessPendingMessages(limit int) ([]ProcessingResult, error) {
+	textMessages, err := p.messageStore.GetProcessableTextMessages(limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get processable text messages: %v", err)
+	}
+
+	remaining := limit - len(textMessages)
+	var imageMessages []ProcessableMessage
+	if remaining > 0 {
+		imageMessages, err = p.messageStore.GetProcessableImageMessages(remaining)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get processable image messages: %v", err)
+		}
+	}
+
+	total := len(textMessages) + len(imageMessages)
+	if total == 0 {
 		p.logger.Infof("No hay mensajes procesables")
 		return []ProcessingResult{}, nil
 	}
-	
-	p.logger.Infof("Procesando %d mensajes", len(messages))
-	
+
+	p.logger.Infof("Procesando %d mensajes (%d texto, %d imágenes)", total, len(textMessages), len(imageMessages))
+
 	var results []ProcessingResult
-	
-	for i, msg := range messages {
-		p.logger.Infof("Procesando mensaje %d/%d: %s", i+1, len(messages), msg.ID)
-		
-		// Procesar mensaje individual
+	idx := 0
+
+	for _, msg := range textMessages {
+		idx++
+		p.logger.Infof("Procesando mensaje texto %d/%d: %s", idx, total, msg.ID)
 		result := p.processMessage(msg)
-		results = append(results, result)
-		
-		// Guardar resultado en la base de datos
-		if err := p.saveProcessingResult(result); err != nil {
-			p.logger.Errorf("Error guardando resultado: %v", err)
+		results = append(results, p.finalizeProcessingResult(msg, result)...)
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	for _, msg := range imageMessages {
+		idx++
+		p.logger.Infof("Procesando mensaje imagen %d/%d: %s", idx, total, msg.ID)
+		result := p.processImageMessage(msg)
+		results = append(results, p.finalizeProcessingResult(msg, result)...)
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	p.logger.Infof("Procesamiento completado: %d resultados", len(results))
+	return results, nil
+}
+
+func (p *MessageProcessor) finalizeProcessingResult(msg ProcessableMessage, result ProcessingResult) []ProcessingResult {
+	if err := p.saveProcessingResult(result); err != nil {
+		p.logger.Errorf("Error guardando resultado: %v", err)
+	}
+
+	switch result.Status {
+	case "success":
+		if err := p.messageStore.MarkMessageAsProcessed(msg.ID, msg.ChatJID); err != nil {
+			p.logger.Errorf("Error marcando mensaje como procesado: %v", err)
 		}
-		
-		// Manejar el resultado según el estado
-		switch result.Status {
-		case "success":
-			// Marcar como procesado exitosamente
-			if err := p.messageStore.MarkMessageAsProcessed(msg.ID, msg.ChatJID); err != nil {
-				p.logger.Errorf("Error marcando mensaje como procesado: %v", err)
+		if result.IsFromImage && result.ExtractedText != "" {
+			fileSHA256 := msg.FileSHA256
+			if len(fileSHA256) == 0 {
+				fileSHA256, _ = p.messageStore.GetMessageFileSHA256(msg.ID, msg.ChatJID)
 			}
-		case "error":
-			// Todos los errores se marcan como procesados inmediatamente para evitar reintentos
-			// que consumen tokens innecesariamente
+			if len(fileSHA256) > 0 {
+				affected, err := p.messageStore.AutoMarkSameCaptionDuplicates(
+					fileSHA256, msg.ID, msg.ChatJID, msg.Content, result.ExtractedText,
+				)
+				if err != nil {
+					p.logger.Warnf("Error auto-marcando duplicados de imagen: %v", err)
+				} else if affected > 0 {
+					p.logger.Infof("Auto-marcados %d duplicados de imagen con mismo caption", affected)
+				}
+			}
+		}
+	case "error":
+		if isRateLimitError(fmt.Errorf("%s", result.ErrorMessage)) {
+			p.logger.Warnf("⏳ Cuota/rate limit para mensaje %s: %s. Se mantiene pendiente para reintentar más tarde.", msg.ID, result.ErrorMessage)
+			if err := p.messageStore.RecordTransientError(msg.ID, msg.ChatJID, result.ErrorMessage); err != nil {
+				p.logger.Errorf("Error registrando error transitorio: %v", err)
+			}
+		} else {
 			p.logger.Warnf("🚫 Error detectado para mensaje %s: %s. Marcando como procesado para evitar reintentos.", msg.ID, result.ErrorMessage)
 			if err := p.messageStore.MarkMessageAsFailedAfterRetries(msg.ID, msg.ChatJID, result.ErrorMessage); err != nil {
 				p.logger.Errorf("Error marcando mensaje como fallido: %v", err)
 			}
 		}
-		
-		// Pequeña pausa entre mensajes
-		time.Sleep(500 * time.Millisecond)
 	}
-	
-	p.logger.Infof("Procesamiento completado: %d resultados", len(results))
-	return results, nil
+
+	return []ProcessingResult{result}
+}
+
+// processImageMessage descarga imagen, extrae texto con OCR y procesa con IA de cargas
+func (p *MessageProcessor) processImageMessage(msg ProcessableMessage) ProcessingResult {
+	result := ProcessingResult{
+		MessageID:   msg.ID,
+		ChatJID:     msg.ChatJID,
+		Content:     msg.Content,
+		SenderPhone: msg.SenderPhone,
+		RealPhone:   msg.RealPhone,
+		Status:      "processing",
+		ProcessedAt: time.Now(),
+		IsFromImage: true,
+	}
+
+	fileSHA256 := msg.FileSHA256
+	if len(fileSHA256) == 0 {
+		var err error
+		fileSHA256, err = p.messageStore.GetMessageFileSHA256(msg.ID, msg.ChatJID)
+		if err != nil {
+			p.logger.Warnf("No se pudo obtener file_sha256 para %s: %v", msg.ID, err)
+		}
+	}
+
+	if len(fileSHA256) > 0 {
+		canonical, err := p.messageStore.FindCanonicalProcessedImage(fileSHA256, msg.ID, msg.ChatJID)
+		if err != nil {
+			p.logger.Warnf("Error buscando imagen canónica para %s: %v", msg.ID, err)
+		} else if canonical != nil {
+			return p.processImageDuplicate(msg, canonical, result)
+		}
+	}
+
+	if p.mediaDownloader == nil {
+		result.Status = "error"
+		result.ErrorMessage = "Media downloader not configured"
+		return result
+	}
+
+	localPath := msg.MediaLocalPath
+	if localPath == "" {
+		var err error
+		localPath, err = p.mediaDownloader.DownloadMessageMedia(msg.ID, msg.ChatJID)
+		if err != nil {
+			result.Status = "error"
+			result.ErrorMessage = fmt.Sprintf("Failed to download image: %v", err)
+			p.logger.Errorf("Error descargando imagen %s: %v", msg.ID, err)
+			return result
+		}
+	}
+
+	extractedText, err := p.ocrService.ExtractTextFromImageActive(localPath)
+	if err != nil {
+		result.Status = "error"
+		result.ErrorMessage = fmt.Sprintf("OCR failed: %v", err)
+		p.logger.Errorf("Error OCR para mensaje %s: %v", msg.ID, err)
+		return result
+	}
+
+	result.ExtractedText = extractedText
+	combinedText := combineImageText(msg.Content, extractedText)
+	if strings.TrimSpace(combinedText) == "" {
+		result.Status = "error"
+		result.ErrorMessage = "No text found in image or caption"
+		return result
+	}
+
+	if err := p.messageStore.UpdateMessageImageProcessing(msg.ID, msg.ChatJID, extractedText, localPath); err != nil {
+		p.logger.Warnf("Error guardando datos OCR: %v", err)
+	}
+
+	msg.Content = combinedText
+	result.Content = combinedText
+	aiResult := p.processMessage(msg)
+	aiResult.ExtractedText = extractedText
+	aiResult.IsFromImage = true
+	return aiResult
+}
+
+func (p *MessageProcessor) processImageDuplicate(msg ProcessableMessage, canonical *CanonicalProcessedImage, result ProcessingResult) ProcessingResult {
+	result.IsDuplicate = true
+	result.DuplicateOfMessageID = canonical.MessageID
+	result.ExtractedText = canonical.ExtractedText
+
+	if canonical.WasDiscarded {
+		result.Status = "success"
+		result.Content = msg.Content
+		_ = p.messageStore.UpdateMessageImageProcessing(msg.ID, msg.ChatJID, canonical.ExtractedText, canonical.MediaLocalPath)
+		_ = p.messageStore.MarkImageDuplicateNote(msg.ID, msg.ChatJID, canonical.MessageID, canonical.ChatJID, true)
+		p.logger.Infof("Imagen duplicada %s: referencia descartada %s", msg.ID, canonical.MessageID)
+		return result
+	}
+
+	localPath := msg.MediaLocalPath
+	if localPath == "" {
+		localPath = canonical.MediaLocalPath
+	}
+	_ = p.messageStore.UpdateMessageImageProcessing(msg.ID, msg.ChatJID, canonical.ExtractedText, localPath)
+
+	if captionsEqual(msg.Content, canonical.Content) {
+		result.Status = "success"
+		result.Content = combineImageText(msg.Content, canonical.ExtractedText)
+		_ = p.messageStore.MarkImageDuplicateNote(msg.ID, msg.ChatJID, canonical.MessageID, canonical.ChatJID, true)
+		p.logger.Infof("Imagen duplicada %s: OCR reutilizado de %s, IA omitida (mismo caption)", msg.ID, canonical.MessageID)
+		return result
+	}
+
+	combinedText := combineImageText(msg.Content, canonical.ExtractedText)
+	if strings.TrimSpace(combinedText) == "" {
+		result.Status = "error"
+		result.ErrorMessage = "No text found in duplicate image or caption"
+		return result
+	}
+
+	msg.Content = combinedText
+	result.Content = combinedText
+	_ = p.messageStore.MarkImageDuplicateNote(msg.ID, msg.ChatJID, canonical.MessageID, canonical.ChatJID, false)
+	p.logger.Infof("Imagen duplicada %s: OCR reutilizado de %s, procesando IA (caption distinto)", msg.ID, canonical.MessageID)
+
+	aiResult := p.processMessage(msg)
+	aiResult.ExtractedText = canonical.ExtractedText
+	aiResult.IsFromImage = true
+	aiResult.IsDuplicate = true
+	aiResult.DuplicateOfMessageID = canonical.MessageID
+	return aiResult
+}
+
+func combineImageText(caption, extractedText string) string {
+	caption = strings.TrimSpace(caption)
+	extractedText = strings.TrimSpace(extractedText)
+
+	switch {
+	case caption != "" && extractedText != "":
+		return caption + "\n\n" + extractedText
+	case caption != "":
+		return caption
+	default:
+		return extractedText
+	}
 }
 
 // processMessage procesa un mensaje individual
@@ -191,6 +420,10 @@ func (p *MessageProcessor) processMessage(msg ProcessableMessage) ProcessingResu
 	cleanedContent := cleanMessageContent(msg.Content)
 	if cleanedContent != msg.Content {
 		p.logger.Infof("🧹 Contenido limpiado: se eliminaron caracteres especiales del mensaje %s", msg.ID)
+	}
+
+	if filtered, skipped := p.applyBlacklistFilter(result, msg.ID, cleanedContent); skipped {
+		return filtered
 	}
 	
 	// 1. Procesar con IA principal
@@ -355,6 +588,10 @@ func (p *MessageProcessor) SimulateMessage(messageContent, realPhone string) Pro
 	if cleanedContent != messageContent {
 		p.logger.Infof("🧹 Contenido limpiado: se eliminaron caracteres especiales en simulación")
 	}
+
+	if filtered, skipped := p.applyBlacklistFilter(result, simulatedMsg.ID, cleanedContent); skipped {
+		return filtered
+	}
 	
 	// Procesar con IA
 	p.logger.Infof("Simulando procesamiento de mensaje")
@@ -421,6 +658,93 @@ func (p *MessageProcessor) SimulateMessage(messageContent, realPhone string) Pro
 	result.ErrorMessage = fmt.Sprintf("Simulación exitosa: %d carga(s) detectada(s)", len(cargasTemp))
 	
 	return result
+}
+
+// SimulateImageMessage simula OCR + procesamiento IA desde una imagen en base64
+func (p *MessageProcessor) SimulateImageMessage(imageBase64, caption, realPhone string) ProcessingResult {
+	result := ProcessingResult{
+		MessageID:   "simulation-image-" + fmt.Sprintf("%d", time.Now().Unix()),
+		ChatJID:     "simulation@chat",
+		Content:     caption,
+		SenderPhone: "simulation-sender",
+		RealPhone:   realPhone,
+		Status:      "processing",
+		ProcessedAt: time.Now(),
+		IsFromImage: true,
+	}
+
+	if strings.TrimSpace(imageBase64) == "" {
+		result.Status = "error"
+		result.ErrorMessage = "No se proporcionó ninguna imagen"
+		return result
+	}
+
+	imageData, err := decodeSimulatorImageBase64(imageBase64)
+	if err != nil {
+		result.Status = "error"
+		result.ErrorMessage = fmt.Sprintf("Invalid image data: %v", err)
+		return result
+	}
+
+	tempPath, err := saveSimulatorTempImage(imageData)
+	if err != nil {
+		result.Status = "error"
+		result.ErrorMessage = fmt.Sprintf("Failed to save temp image: %v", err)
+		return result
+	}
+	defer os.Remove(tempPath)
+
+	p.logger.Infof("Simulando OCR de imagen: %s", tempPath)
+
+	extractedText, err := p.ocrService.ExtractTextFromImageActive(tempPath)
+	if err != nil {
+		result.Status = "error"
+		result.ErrorMessage = fmt.Sprintf("OCR failed: %v", err)
+		return result
+	}
+
+	result.ExtractedText = extractedText
+	combinedText := combineImageText(caption, extractedText)
+	if strings.TrimSpace(combinedText) == "" {
+		result.Status = "error"
+		result.ErrorMessage = "No text found in image or caption"
+		return result
+	}
+
+	result.Content = combinedText
+	aiResult := p.SimulateMessage(combinedText, realPhone)
+	aiResult.ExtractedText = extractedText
+	aiResult.IsFromImage = true
+	aiResult.Content = combinedText
+	return aiResult
+}
+
+func decodeSimulatorImageBase64(raw string) ([]byte, error) {
+	raw = strings.TrimSpace(raw)
+	if idx := strings.Index(raw, ","); idx != -1 && strings.HasPrefix(raw, "data:") {
+		raw = raw[idx+1:]
+	}
+	return base64.StdEncoding.DecodeString(raw)
+}
+
+func saveSimulatorTempImage(imageData []byte) (string, error) {
+	dir := filepath.Join("store", "simulator")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", err
+	}
+
+	ext := ".jpg"
+	if len(imageData) >= 8 && string(imageData[:8]) == "\x89PNG\r\n\x1a\n" {
+		ext = ".png"
+	} else if len(imageData) >= 4 && string(imageData[:4]) == "RIFF" {
+		ext = ".webp"
+	}
+
+	path := filepath.Join(dir, fmt.Sprintf("sim_%d%s", time.Now().UnixNano(), ext))
+	if err := os.WriteFile(path, imageData, 0644); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 // saveProcessingResult guarda el resultado del procesamiento en la base de datos
@@ -506,11 +830,17 @@ func (p *MessageProcessor) GetProcessingStats() (map[string]interface{}, error) 
 	stats := make(map[string]interface{})
 	
 	// Contar mensajes procesables
-	processableCount, err := p.messageStore.GetProcessableMessagesCount()
+	textCount, err := p.messageStore.GetProcessableTextMessagesCount()
 	if err != nil {
 		return nil, err
 	}
-	stats["processable_count"] = processableCount
+	imageCount, err := p.messageStore.GetProcessableImageMessagesCount()
+	if err != nil {
+		return nil, err
+	}
+	stats["processable_count"] = textCount + imageCount
+	stats["processable_text_count"] = textCount
+	stats["processable_image_count"] = imageCount
 	
 	// Contar resultados por estado
 	statusQuery := `
@@ -604,28 +934,16 @@ func (p *MessageProcessor) ProcessSingleMessage(messageID, chatJID string) (Proc
 	}
 	
 	p.logger.Infof("Procesando mensaje individual: %s (permitir reprocesar)", messageID)
-	
-	// Procesar el mensaje
-	result := p.processMessage(*targetMessage)
-	
-	// Guardar resultado
-	if err := p.saveProcessingResult(result); err != nil {
-		p.logger.Errorf("Error guardando resultado: %v", err)
+
+	var result ProcessingResult
+	if targetMessage.MediaType == "image" {
+		result = p.processImageMessage(*targetMessage)
+	} else {
+		result = p.processMessage(*targetMessage)
 	}
-	
-	// Manejar el resultado según el estado
-	switch result.Status {
-	case "success":
-		if err := p.messageStore.MarkMessageAsProcessed(targetMessage.ID, targetMessage.ChatJID); err != nil {
-			p.logger.Errorf("Error marcando mensaje como procesado: %v", err)
-		}
-	case "error":
-		// Todos los errores se marcan como procesados inmediatamente para evitar reintentos
-		// que consumen tokens innecesariamente
-		p.logger.Warnf("🚫 Error detectado para mensaje %s: %s. Marcando como procesado para evitar reintentos.", targetMessage.ID, result.ErrorMessage)
-		if err := p.messageStore.MarkMessageAsFailedAfterRetries(targetMessage.ID, targetMessage.ChatJID, result.ErrorMessage); err != nil {
-			p.logger.Errorf("Error marcando mensaje como fallido: %v", err)
-		}
+
+	for _, finalized := range p.finalizeProcessingResult(*targetMessage, result) {
+		result = finalized
 	}
 	
 	p.logger.Infof("🏁 ProcessSingleMessage finalizando - devolviendo resultado con status: %s", result.Status)
@@ -652,15 +970,7 @@ func (p *MessageProcessor) validateLocations(jsonData []byte) error {
 	}
 	
 	// Ciudades argentinas que contienen nombres de países en su nombre (excepciones)
-	argentineCitiesWithCountryNames := []string{
-		"concepción del uruguay",  // Entre Ríos, Argentina
-		"concepcion del uruguay",
-		"chilecito",               // La Rioja, Argentina (contiene "chile")
-		"perúgorría",              // Corrientes, Argentina (contiene "perú")
-		"perugorria",              // Corrientes, Argentina (sin tilde)
-		"perugorría",              // Corrientes, Argentina (variante)
-		// Agregar más excepciones aquí si es necesario
-	}
+	argentineCitiesWithCountryNames := ArgentineLocationExceptions
 	
 	// Países NO permitidos (solo Argentina está permitida)
 	forbiddenCountries := []string{

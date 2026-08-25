@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -26,6 +27,7 @@ type WhatsAppService struct {
 	messageStore             *MessageStore
 	messageProcessor         *MessageProcessor
 	aiConfigManager          *AIConfigManager
+	ocrConfigManager         *OCRConfigManager
 	systemConfigManager      *SystemConfigManager
 	logger                   waLog.Logger
 	qrChan                   <-chan whatsmeow.QRChannelItem
@@ -57,7 +59,10 @@ type ChatMessage struct {
 // ProcessableMessage representa un mensaje que puede ser procesado por IA
 type ProcessableMessage struct {
 	ChatMessage
-	RealPhone string `json:"real_phone"` // Teléfono real asociado
+	RealPhone      string `json:"real_phone"` // Teléfono real asociado
+	ExtractedText  string `json:"extracted_text"`
+	MediaLocalPath string `json:"media_local_path"`
+	FileSHA256     []byte `json:"-"`
 }
 
 // Chat representa un chat en la lista
@@ -69,7 +74,9 @@ type Chat struct {
 
 // MessageStore maneja el almacenamiento de mensajes
 type MessageStore struct {
-	db *sql.DB
+	db              *sql.DB
+	excludedChatMu  sync.RWMutex
+	excludedChatJID string
 }
 
 // NewMessageStore crea una nueva instancia del store de mensajes
@@ -120,6 +127,8 @@ func NewMessageStore() (*MessageStore, error) {
 			processing_attempts INT DEFAULT 0,
 			last_processing_error TEXT,
 			last_processing_attempt TIMESTAMP NULL,
+			extracted_text TEXT NULL,
+			media_local_path VARCHAR(500) NULL,
 			PRIMARY KEY (id, chat_jid),
 			FOREIGN KEY (chat_jid) REFERENCES chats(jid) ON DELETE CASCADE
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
@@ -225,6 +234,105 @@ func (store *MessageStore) InitAIConfigTables() error {
 		}
 	}
 
+	if err := store.runMigrationFile("migrations/update_gemini_models_2026.sql"); err != nil {
+		return fmt.Errorf("failed to update gemini models: %v", err)
+	}
+
+	if err := store.runMigrationFile("migrations/add_ocrspace_provider.sql"); err != nil {
+		return fmt.Errorf("failed to add OCR.space provider: %v", err)
+	}
+
+	if err := store.runMigrationFile("migrations/add_image_sha256_index.sql"); err != nil {
+		return fmt.Errorf("failed to add image sha256 index: %v", err)
+	}
+
+	if err := store.runMigrationFile("migrations/add_message_blacklist_config.sql"); err != nil {
+		return fmt.Errorf("failed to add message blacklist config: %v", err)
+	}
+
+	if _, err := store.db.Exec(`
+		UPDATE ai_models SET supports_vision = 1
+		WHERE name LIKE 'gemini-%' OR name LIKE 'gemini_%'
+	`); err != nil {
+		return fmt.Errorf("failed to mark gemini models as vision: %v", err)
+	}
+
+	return nil
+}
+
+func (store *MessageStore) runMigrationFile(path string) error {
+	sqlBytes, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("failed to read migration file %s: %v", path, err)
+	}
+
+	for _, stmt := range splitSQLStatements(string(sqlBytes)) {
+		stmt = strings.TrimSpace(stmt)
+		if stmt == "" || strings.HasPrefix(stmt, "--") {
+			continue
+		}
+		if _, err := store.db.Exec(stmt); err != nil {
+			if !strings.Contains(err.Error(), "Duplicate") &&
+				!strings.Contains(err.Error(), "already exists") &&
+				!isColumnExistsError(err) {
+				return fmt.Errorf("failed to execute migration %s: %v\nStatement: %s", path, err, stmt)
+			}
+		}
+	}
+	return nil
+}
+
+// InitDevAgentTables inicializa las tablas del agente de desarrollo
+func (store *MessageStore) InitDevAgentTables() error {
+	return store.runMigrationFile("migrations/create_dev_agent_tables.sql")
+}
+
+// SetExcludedChatJID excluye un chat del pipeline de procesamiento de cargas
+func (store *MessageStore) SetExcludedChatJID(jid string) {
+	store.excludedChatMu.Lock()
+	defer store.excludedChatMu.Unlock()
+	store.excludedChatJID = jid
+}
+
+func (store *MessageStore) getExcludedChatJID() string {
+	store.excludedChatMu.RLock()
+	defer store.excludedChatMu.RUnlock()
+	return store.excludedChatJID
+}
+
+func (store *MessageStore) appendExcludedChatFilter(query string, args []interface{}) (string, []interface{}) {
+	if excluded := store.getExcludedChatJID(); excluded != "" {
+		query += " AND m.chat_jid != ?"
+		args = append(args, excluded)
+	}
+	return query, args
+}
+
+// InitOCRConfigTables inicializa las tablas de configuración OCR
+func (store *MessageStore) InitOCRConfigTables() error {
+	sqlFile := "migrations/create_ocr_config_tables.sql"
+	sqlBytes, err := os.ReadFile(sqlFile)
+	if err != nil {
+		return fmt.Errorf("failed to read OCR config migration file: %v", err)
+	}
+
+	statements := splitSQLStatements(string(sqlBytes))
+	for _, stmt := range statements {
+		stmt = strings.TrimSpace(stmt)
+		if stmt == "" || strings.HasPrefix(stmt, "--") {
+			continue
+		}
+
+		_, err := store.db.Exec(stmt)
+		if err != nil {
+			if !strings.Contains(err.Error(), "already exists") &&
+				!strings.Contains(err.Error(), "Duplicate") &&
+				!isColumnExistsError(err) {
+				return fmt.Errorf("failed to execute OCR config migration: %v\nStatement: %s", err, stmt)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -282,6 +390,8 @@ func runMigrations(db *sql.DB) error {
 		{"processing_attempts", "INT DEFAULT 0"},
 		{"last_processing_error", "TEXT"},
 		{"last_processing_attempt", "TIMESTAMP NULL"},
+		{"extracted_text", "TEXT NULL"},
+		{"media_local_path", "VARCHAR(500) NULL"},
 	}
 
 	for _, col := range messageColumns {
@@ -419,6 +529,48 @@ func (store *MessageStore) GetMessages(chatJID string, limit int) ([]ChatMessage
 	return messages, nil
 }
 
+// SearchMessagesInChat busca mensajes por texto dentro de un chat
+func (store *MessageStore) SearchMessagesInChat(chatJID, query string, limit int) ([]ChatMessage, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return store.GetMessages(chatJID, limit)
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+
+	like := "%" + query + "%"
+	rows, err := store.db.Query(
+		`SELECT id, sender_phone, sender_name, content, timestamp, is_from_me, media_type, filename, processed
+		FROM messages
+		WHERE chat_jid = ?
+		  AND (
+		    content LIKE ? OR
+		    sender_name LIKE ? OR
+		    sender_phone LIKE ?
+		  )
+		ORDER BY timestamp DESC
+		LIMIT ?`,
+		chatJID, like, like, like, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var messages []ChatMessage
+	for rows.Next() {
+		var msg ChatMessage
+		err := rows.Scan(&msg.ID, &msg.SenderPhone, &msg.SenderName, &msg.Content, &msg.Timestamp, &msg.IsFromMe, &msg.MediaType, &msg.Filename, &msg.Processed)
+		if err != nil {
+			return nil, err
+		}
+		msg.ChatJID = chatJID
+		messages = append(messages, msg)
+	}
+	return messages, nil
+}
+
 // GetMessagesBySenderPhone obtiene mensajes de un remitente específico
 func (store *MessageStore) GetMessagesBySenderPhone(senderPhone string, limit int) ([]ChatMessage, error) {
 	if limit <= 0 {
@@ -479,67 +631,89 @@ func (store *MessageStore) GetUnprocessedMessages(limit int) ([]ChatMessage, err
 	return messages, nil
 }
 
-// GetMessageByID obtiene un mensaje específico por ID y chatJID
-// Permite obtener cualquier mensaje, sin importar su estado (procesado, con errores, etc.)
+// GetMessageByID obtiene un mensaje específico por ID y chatJID (sin exigir asociación telefónica)
 func (store *MessageStore) GetMessageByID(messageID, chatJID string) (*ProcessableMessage, error) {
 	query := `
-		SELECT m.id, m.chat_jid, m.sender_phone, m.sender_name, m.content, 
+		SELECT m.id, m.chat_jid, m.sender_phone, m.sender_name, m.content,
 		       m.timestamp, m.is_from_me, m.media_type, m.filename, m.processed,
-		       pa.real_phone
+		       COALESCE(pa.real_phone, ''), COALESCE(m.extracted_text, ''), COALESCE(m.media_local_path, ''),
+		       m.file_sha256
 		FROM messages m
-		INNER JOIN phone_associations pa ON m.sender_phone = pa.sender_phone
-		WHERE m.id = ? 
-		  AND m.chat_jid = ?
-		  AND m.content IS NOT NULL 
-		  AND m.content != ''
-		  AND pa.real_phone IS NOT NULL
-		  AND pa.real_phone != ''
+		LEFT JOIN phone_associations pa ON m.sender_phone = pa.sender_phone
+		WHERE m.id = ? AND m.chat_jid = ?
 		LIMIT 1
 	`
 
 	var msg ProcessableMessage
+	var fileSHA256 []byte
 	err := store.db.QueryRow(query, messageID, chatJID).Scan(
 		&msg.ID, &msg.ChatJID, &msg.SenderPhone, &msg.SenderName, &msg.Content,
 		&msg.Timestamp, &msg.IsFromMe, &msg.MediaType, &msg.Filename, &msg.Processed,
-		&msg.RealPhone,
+		&msg.RealPhone, &msg.ExtractedText, &msg.MediaLocalPath, &fileSHA256,
 	)
 
 	if err == sql.ErrNoRows {
-		return nil, nil // Mensaje no encontrado o sin asociación de teléfono
+		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
 
+	msg.FileSHA256 = fileSHA256
+	if msg.RealPhone == "" && len(msg.SenderPhone) > 0 && len(msg.SenderPhone) <= 15 {
+		msg.RealPhone = msg.SenderPhone
+	}
 	return &msg, nil
 }
 
-// GetProcessableMessages obtiene mensajes que pueden ser procesados por IA
-func (store *MessageStore) GetProcessableMessages(limit int) ([]ProcessableMessage, error) {
+const processableMessageColumns = `
+		m.id, m.chat_jid, m.sender_phone, m.sender_name, m.content,
+		m.timestamp, m.is_from_me, m.media_type, m.filename, m.processed,
+		pa.real_phone, COALESCE(m.extracted_text, ''), COALESCE(m.media_local_path, ''),
+		m.file_sha256
+`
+
+const processablePhoneJoin = `
+	INNER JOIN phone_associations pa ON m.sender_phone = pa.sender_phone
+	WHERE m.processed = 0
+	  AND pa.real_phone IS NOT NULL
+	  AND pa.real_phone != ''
+	  AND (m.processing_attempts = 0 OR m.processing_attempts IS NULL)
+`
+
+// GetProcessableTextMessages obtiene mensajes de texto puro procesables
+func (store *MessageStore) GetProcessableTextMessages(limit int) ([]ProcessableMessage, error) {
 	query := `
-		SELECT m.id, m.chat_jid, m.sender_phone, m.sender_name, m.content, 
-		       m.timestamp, m.is_from_me, m.media_type, m.filename, m.processed,
-		       pa.real_phone
+		SELECT ` + processableMessageColumns + `
 		FROM messages m
-		INNER JOIN phone_associations pa ON m.sender_phone = pa.sender_phone
-		WHERE m.processed = 0 
-		  AND m.content IS NOT NULL 
-		  AND m.content != ''
-		  AND pa.real_phone IS NOT NULL
-		  AND pa.real_phone != ''
-		  AND (m.processing_attempts = 0 OR m.processing_attempts IS NULL)
-		  -- Filtrar mensajes de texto cortos (menos de 20 caracteres) para descongestionar la API
-		  -- Solo aplicar este filtro a mensajes de texto (sin media_type o media_type vacío)
-		  AND (
-		       (m.media_type IS NOT NULL AND m.media_type != '') 
-		       OR 
-		       (m.media_type IS NULL OR m.media_type = '') AND LENGTH(m.content) >= 20
-		  )
+	` + processablePhoneJoin + `
+	  AND (m.media_type IS NULL OR m.media_type = '')
+	  AND m.content IS NOT NULL
+	  AND m.content != ''
+	  AND LENGTH(m.content) >= 20
 		ORDER BY m.timestamp ASC
 		LIMIT ?
 	`
+	query, args := store.appendExcludedChatFilter(query, []interface{}{limit})
+	return store.scanProcessableMessages(query, args...)
+}
 
-	rows, err := store.db.Query(query, limit)
+// GetProcessableImageMessages obtiene mensajes con imágenes procesables
+func (store *MessageStore) GetProcessableImageMessages(limit int) ([]ProcessableMessage, error) {
+	query := `
+		SELECT ` + processableMessageColumns + `
+		FROM messages m
+	` + processablePhoneJoin + `
+	  AND m.media_type = 'image'
+		ORDER BY m.timestamp ASC
+		LIMIT ?
+	`
+	query, args := store.appendExcludedChatFilter(query, []interface{}{limit})
+	return store.scanProcessableMessages(query, args...)
+}
+
+func (store *MessageStore) scanProcessableMessages(query string, args ...interface{}) ([]ProcessableMessage, error) {
+	rows, err := store.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -548,64 +722,89 @@ func (store *MessageStore) GetProcessableMessages(limit int) ([]ProcessableMessa
 	var messages []ProcessableMessage
 	for rows.Next() {
 		var msg ProcessableMessage
+		var fileSHA256 []byte
 		err := rows.Scan(&msg.ID, &msg.ChatJID, &msg.SenderPhone, &msg.SenderName, &msg.Content,
-			&msg.Timestamp, &msg.IsFromMe, &msg.MediaType, &msg.Filename, &msg.Processed, &msg.RealPhone)
+			&msg.Timestamp, &msg.IsFromMe, &msg.MediaType, &msg.Filename, &msg.Processed,
+			&msg.RealPhone, &msg.ExtractedText, &msg.MediaLocalPath, &fileSHA256)
 		if err != nil {
 			return nil, err
 		}
+		msg.FileSHA256 = fileSHA256
 		messages = append(messages, msg)
 	}
 	return messages, nil
 }
 
-// GetProcessableMessagesCount obtiene el conteo de mensajes procesables
-func (store *MessageStore) GetProcessableMessagesCount() (int, error) {
+// GetProcessableMessages obtiene mensajes de texto procesables (compatibilidad)
+func (store *MessageStore) GetProcessableMessages(limit int) ([]ProcessableMessage, error) {
+	return store.GetProcessableTextMessages(limit)
+}
+
+// GetProcessableTextMessagesCount obtiene el conteo de mensajes de texto procesables
+func (store *MessageStore) GetProcessableTextMessagesCount() (int, error) {
 	query := `
 		SELECT COUNT(*)
 		FROM messages m
-		INNER JOIN phone_associations pa ON m.sender_phone = pa.sender_phone
-		WHERE m.processed = 0 
-		  AND m.content IS NOT NULL 
-		  AND m.content != ''
-		  AND pa.real_phone IS NOT NULL
-		  AND pa.real_phone != ''
-		  AND (m.processing_attempts = 0 OR m.processing_attempts IS NULL)
-		  -- Filtrar mensajes de texto cortos (menos de 20 caracteres) para descongestionar la API
-		  -- Solo aplicar este filtro a mensajes de texto (sin media_type o media_type vacío)
-		  AND (
-		       (m.media_type IS NOT NULL AND m.media_type != '') 
-		       OR 
-		       (m.media_type IS NULL OR m.media_type = '') AND LENGTH(m.content) >= 20
-		  )
+	` + processablePhoneJoin + `
+	  AND (m.media_type IS NULL OR m.media_type = '')
+	  AND m.content IS NOT NULL
+	  AND m.content != ''
+	  AND LENGTH(m.content) >= 20
 	`
+	query, args := store.appendExcludedChatFilter(query, nil)
 
 	var count int
-	err := store.db.QueryRow(query).Scan(&count)
+	err := store.db.QueryRow(query, args...).Scan(&count)
+	return count, err
+}
+
+// GetProcessableImageMessagesCount obtiene el conteo de mensajes con imagen procesables
+func (store *MessageStore) GetProcessableImageMessagesCount() (int, error) {
+	query := `
+		SELECT COUNT(*)
+		FROM messages m
+	` + processablePhoneJoin + `
+	  AND m.media_type = 'image'
+	`
+	query, args := store.appendExcludedChatFilter(query, nil)
+
+	var count int
+	err := store.db.QueryRow(query, args...).Scan(&count)
+	return count, err
+}
+
+// GetProcessableMessagesCount obtiene el conteo total de mensajes procesables
+func (store *MessageStore) GetProcessableMessagesCount() (int, error) {
+	textCount, err := store.GetProcessableTextMessagesCount()
 	if err != nil {
 		return 0, err
 	}
-	return count, nil
+	imageCount, err := store.GetProcessableImageMessagesCount()
+	if err != nil {
+		return 0, err
+	}
+	return textCount + imageCount, nil
 }
 
 // GetUnprocessedMessagesWithRealPhone obtiene mensajes sin procesar con teléfono real
 func (store *MessageStore) GetUnprocessedMessagesWithRealPhone(limit int) ([]ProcessableMessage, error) {
 	query := `
-		SELECT m.id, m.chat_jid, m.sender_phone, m.sender_name, m.content, 
+		SELECT m.id, m.chat_jid, m.sender_phone, m.sender_name, m.content,
 		       m.timestamp, m.is_from_me, m.media_type, m.filename, m.processed,
-		       pa.real_phone, COALESCE(m.processing_attempts, 0) as processing_attempts
+		       pa.real_phone, COALESCE(m.extracted_text, ''), COALESCE(m.media_local_path, '')
 		FROM messages m
 		INNER JOIN phone_associations pa ON m.sender_phone = pa.sender_phone
-		WHERE m.processed = 0 
-		  AND m.content IS NOT NULL 
-		  AND m.content != ''
+		WHERE m.processed = 0
 		  AND pa.real_phone IS NOT NULL
 		  AND pa.real_phone != ''
-		  -- Filtrar mensajes de texto cortos (menos de 20 caracteres) para descongestionar la API
-		  -- Solo aplicar este filtro a mensajes de texto (sin media_type o media_type vacío)
 		  AND (
-		       (m.media_type IS NOT NULL AND m.media_type != '') 
-		       OR 
-		       (m.media_type IS NULL OR m.media_type = '') AND LENGTH(m.content) >= 20
+		       m.media_type = 'image'
+		       OR (
+		         (m.media_type IS NULL OR m.media_type = '')
+		         AND m.content IS NOT NULL
+		         AND m.content != ''
+		         AND LENGTH(m.content) >= 20
+		       )
 		  )
 		ORDER BY m.timestamp DESC
 		LIMIT ?
@@ -620,17 +819,40 @@ func (store *MessageStore) GetUnprocessedMessagesWithRealPhone(limit int) ([]Pro
 	var messages []ProcessableMessage
 	for rows.Next() {
 		var msg ProcessableMessage
-		var attempts int
-
 		err := rows.Scan(&msg.ID, &msg.ChatJID, &msg.SenderPhone, &msg.SenderName, &msg.Content,
 			&msg.Timestamp, &msg.IsFromMe, &msg.MediaType, &msg.Filename, &msg.Processed,
-			&msg.RealPhone, &attempts)
+			&msg.RealPhone, &msg.ExtractedText, &msg.MediaLocalPath)
 		if err != nil {
 			return nil, err
 		}
 		messages = append(messages, msg)
 	}
 	return messages, nil
+}
+
+// UpdateMessageImageProcessing guarda texto extraído y ruta local de media
+func (store *MessageStore) UpdateMessageImageProcessing(messageID, chatJID, extractedText, mediaLocalPath string) error {
+	_, err := store.db.Exec(`
+		UPDATE messages
+		SET extracted_text = ?, media_local_path = ?
+		WHERE id = ? AND chat_jid = ?
+	`, extractedText, mediaLocalPath, messageID, chatJID)
+	return err
+}
+
+// GetMediaInfo obtiene información de media de un mensaje
+func (store *MessageStore) GetMediaInfo(id, chatJID string) (string, string, string, []byte, []byte, []byte, uint64, error) {
+	var mediaType, filename, url string
+	var mediaKey, fileSHA256, fileEncSHA256 []byte
+	var fileLength uint64
+
+	err := store.db.QueryRow(
+		`SELECT media_type, filename, url, media_key, file_sha256, file_enc_sha256, file_length
+		 FROM messages WHERE id = ? AND chat_jid = ?`,
+		id, chatJID,
+	).Scan(&mediaType, &filename, &url, &mediaKey, &fileSHA256, &fileEncSHA256, &fileLength)
+
+	return mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength, err
 }
 
 // MarkMessageAsProcessed marca un mensaje como procesado
@@ -673,6 +895,18 @@ func (store *MessageStore) MarkMessageAsFailedAfterRetries(messageID, chatJID st
 	return err
 }
 
+// RecordTransientError guarda el error sin marcar el mensaje como procesado (p. ej. rate limit)
+func (store *MessageStore) RecordTransientError(messageID, chatJID, errorMsg string) error {
+	_, err := store.db.Exec(
+		`UPDATE messages
+		 SET last_processing_error = ?,
+		     last_processing_attempt = NOW()
+		 WHERE id = ? AND chat_jid = ?`,
+		errorMsg, messageID, chatJID,
+	)
+	return err
+}
+
 // ResetProcessingAttempts resetea el contador de intentos para reprocesar un mensaje
 func (store *MessageStore) ResetProcessingAttempts(messageID, chatJID string) error {
 	_, err := store.db.Exec(
@@ -689,6 +923,7 @@ func (store *MessageStore) ResetProcessingAttempts(messageID, chatJID string) er
 
 // DeleteMessage elimina un mensaje de la base de datos
 func (store *MessageStore) DeleteMessage(messageID, chatJID string) error {
+	store.deleteMessageMediaFile(messageID, chatJID)
 	_, err := store.db.Exec(
 		`DELETE FROM messages WHERE id = ? AND chat_jid = ?`,
 		messageID, chatJID,
@@ -870,13 +1105,25 @@ func NewWhatsAppService() (*WhatsAppService, error) {
 		return nil, fmt.Errorf("failed to initialize message store: %v", err)
 	}
 
+	// Inicializar tablas OCR primero (agrega columna supports_vision a ai_models)
+	if err := messageStore.InitOCRConfigTables(); err != nil {
+		return nil, fmt.Errorf("failed to initialize OCR config tables: %v", err)
+	}
+
 	// Inicializar tablas de configuración de IA
 	if err := messageStore.InitAIConfigTables(); err != nil {
 		return nil, fmt.Errorf("failed to initialize AI config tables: %v", err)
 	}
 
+	if err := messageStore.InitDevAgentTables(); err != nil {
+		return nil, fmt.Errorf("failed to initialize dev agent tables: %v", err)
+	}
+
 	// Inicializar AI config manager
 	aiConfigManager := NewAIConfigManager(messageStore.db)
+
+	// Inicializar OCR config manager
+	ocrConfigManager := NewOCRConfigManager(messageStore.db)
 
 	// Inicializar System config manager
 	systemConfigManager := NewSystemConfigManager(messageStore.db)
@@ -888,7 +1135,7 @@ func NewWhatsAppService() (*WhatsAppService, error) {
 	}
 
 	// Inicializar message processor con el nuevo sistema
-	messageProcessor, err := NewMessageProcessor(messageStore, logger, keysManager, aiConfigManager, systemConfigManager)
+	messageProcessor, err := NewMessageProcessor(messageStore, logger, keysManager, aiConfigManager, ocrConfigManager, systemConfigManager)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create message processor: %v", err)
 	}
@@ -898,11 +1145,13 @@ func NewWhatsAppService() (*WhatsAppService, error) {
 		messageStore:        messageStore,
 		messageProcessor:    messageProcessor,
 		aiConfigManager:     aiConfigManager,
+		ocrConfigManager:    ocrConfigManager,
 		systemConfigManager: systemConfigManager,
 		logger:              logger,
 	}
 
-	// Configurar event handler
+	messageProcessor.SetMediaDownloader(service)
+
 	client.AddEventHandler(func(evt interface{}) {
 		service.eventHandler(evt)
 	})
@@ -918,8 +1167,18 @@ func extractTextContent(msg *waProto.Message) string {
 
 	if text := msg.GetConversation(); text != "" {
 		return text
-	} else if extendedText := msg.GetExtendedTextMessage(); extendedText != nil {
+	}
+	if extendedText := msg.GetExtendedTextMessage(); extendedText != nil {
 		return extendedText.GetText()
+	}
+	if img := msg.GetImageMessage(); img != nil && img.GetCaption() != "" {
+		return img.GetCaption()
+	}
+	if vid := msg.GetVideoMessage(); vid != nil && vid.GetCaption() != "" {
+		return vid.GetCaption()
+	}
+	if doc := msg.GetDocumentMessage(); doc != nil && doc.GetCaption() != "" {
+		return doc.GetCaption()
 	}
 
 	return ""
@@ -956,6 +1215,170 @@ func extractMediaInfo(msg *waProto.Message) (mediaType string, filename string, 
 	}
 
 	return "", "", "", nil, nil, nil, 0
+}
+
+// MediaDownloader implementa whatsmeow.DownloadableMessage para descargar media
+type MediaDownloader struct {
+	URL           string
+	DirectPath    string
+	MediaKey      []byte
+	FileLength    uint64
+	FileSHA256    []byte
+	FileEncSHA256 []byte
+	MediaType     whatsmeow.MediaType
+}
+
+func (d *MediaDownloader) GetDirectPath() string  { return d.DirectPath }
+func (d *MediaDownloader) GetURL() string         { return d.URL }
+func (d *MediaDownloader) GetMediaKey() []byte    { return d.MediaKey }
+func (d *MediaDownloader) GetFileLength() uint64  { return d.FileLength }
+func (d *MediaDownloader) GetFileSHA256() []byte  { return d.FileSHA256 }
+func (d *MediaDownloader) GetFileEncSHA256() []byte { return d.FileEncSHA256 }
+func (d *MediaDownloader) GetMediaType() whatsmeow.MediaType { return d.MediaType }
+
+func extractDirectPathFromURL(url string) string {
+	parts := strings.SplitN(url, ".net/", 2)
+	if len(parts) < 2 {
+		return url
+	}
+	pathPart := parts[1]
+	pathPart = strings.SplitN(pathPart, "?", 2)[0]
+	return "/" + pathPart
+}
+
+func (s *WhatsAppService) downloadMedia(messageID, chatJID string) (string, error) {
+	mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength, err := s.messageStore.GetMediaInfo(messageID, chatJID)
+	if err != nil {
+		return "", fmt.Errorf("failed to find message in DB: %v", err)
+	}
+	if mediaType == "" {
+		return "", fmt.Errorf("not a media message")
+	}
+
+	mediaDir := filepath.Join("store", strings.ReplaceAll(chatJID, ":", "_"))
+	if err := os.MkdirAll(mediaDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create media directory: %v", err)
+	}
+
+	localPath := filepath.Join(mediaDir, filename)
+	if _, err := os.Stat(localPath); err == nil {
+		_ = s.messageStore.UpdateMessageMediaLocalPath(messageID, chatJID, localPath)
+		return localPath, nil
+	}
+
+	if url == "" || len(mediaKey) == 0 || len(fileSHA256) == 0 || len(fileEncSHA256) == 0 || fileLength == 0 {
+		return "", fmt.Errorf("incomplete media information for download")
+	}
+
+	var waMediaType whatsmeow.MediaType
+	switch mediaType {
+	case "image":
+		waMediaType = whatsmeow.MediaImage
+	case "video":
+		waMediaType = whatsmeow.MediaVideo
+	case "audio":
+		waMediaType = whatsmeow.MediaAudio
+	case "document":
+		waMediaType = whatsmeow.MediaDocument
+	default:
+		return "", fmt.Errorf("unsupported media type: %s", mediaType)
+	}
+
+	downloader := &MediaDownloader{
+		URL:           url,
+		DirectPath:    extractDirectPathFromURL(url),
+		MediaKey:      mediaKey,
+		FileLength:    fileLength,
+		FileSHA256:    fileSHA256,
+		FileEncSHA256: fileEncSHA256,
+		MediaType:     waMediaType,
+	}
+
+	mediaData, err := s.client.Download(context.Background(), downloader)
+	if err != nil {
+		return "", fmt.Errorf("failed to download media: %v", err)
+	}
+
+	if err := os.WriteFile(localPath, mediaData, 0644); err != nil {
+		return "", fmt.Errorf("failed to save media file: %v", err)
+	}
+
+	s.logger.Infof("Downloaded %s media to %s (%d bytes)", mediaType, localPath, len(mediaData))
+	_ = s.messageStore.UpdateMessageMediaLocalPath(messageID, chatJID, localPath)
+	return localPath, nil
+}
+
+// EnsureMessageImagePath obtiene o descarga la ruta local de una imagen
+func (s *WhatsAppService) EnsureMessageImagePath(messageID, chatJID string) (string, error) {
+	localPath, err := s.messageStore.GetMessageMediaLocalPath(messageID, chatJID)
+	if err == nil && localPath != "" {
+		if _, statErr := os.Stat(localPath); statErr == nil {
+			return localPath, nil
+		}
+	}
+
+	mediaType, filename, _, _, _, _, _, err := s.messageStore.GetMediaInfo(messageID, chatJID)
+	if err != nil {
+		return "", fmt.Errorf("message not found: %v", err)
+	}
+	if mediaType != "image" {
+		return "", fmt.Errorf("not an image message")
+	}
+
+	expectedPath := filepath.Join("store", strings.ReplaceAll(chatJID, ":", "_"), filename)
+	if _, statErr := os.Stat(expectedPath); statErr == nil {
+		_ = s.messageStore.UpdateMessageMediaLocalPath(messageID, chatJID, expectedPath)
+		return expectedPath, nil
+	}
+
+	if !s.IsConnected() {
+		return "", fmt.Errorf("imagen no descargada localmente y WhatsApp no está conectado")
+	}
+
+	return s.downloadMedia(messageID, chatJID)
+}
+
+// GetMessageImagePreview devuelve la imagen como data URL para mostrar en el frontend
+func (s *WhatsAppService) GetMessageImagePreview(messageID, chatJID string) (ImagePreviewResponse, error) {
+	path, err := s.EnsureMessageImagePath(messageID, chatJID)
+	if err != nil {
+		return ImagePreviewResponse{Success: false, Error: err.Error()}, nil
+	}
+
+	dataURL, err := imagePathToDataURL(path)
+	if err != nil {
+		return ImagePreviewResponse{Success: false, Error: err.Error()}, nil
+	}
+
+	return ImagePreviewResponse{Success: true, DataURL: dataURL, Path: path}, nil
+}
+
+// GetImageMessages obtiene mensajes con imágenes para la galería
+func (s *WhatsAppService) GetImageMessages(filter string, limit int) ([]ImageMessageInfo, error) {
+	return s.messageStore.GetImageMessages(filter, limit)
+}
+
+// DiscardImageMessage marca una imagen como descartada sin procesarla con IA
+func (s *WhatsAppService) DiscardImageMessage(messageID, chatJID string) error {
+	return s.messageStore.DiscardImageMessage(messageID, chatJID)
+}
+
+// DeletePendingImageMessages elimina todas las imágenes pendientes
+func (s *WhatsAppService) DeletePendingImageMessages() (int64, error) {
+	return s.messageStore.DeletePendingImageMessages()
+}
+
+// DeleteImageMessages elimina mensajes con imagen por referencia
+func (s *WhatsAppService) DeleteImageMessages(refs []ImageMessageRef) (int64, error) {
+	return s.messageStore.DeleteImageMessages(refs)
+}
+
+// DownloadMessageMedia descarga la media de un mensaje y devuelve la ruta local
+func (s *WhatsAppService) DownloadMessageMedia(messageID, chatJID string) (string, error) {
+	if !s.IsConnected() {
+		return "", fmt.Errorf("not connected to WhatsApp")
+	}
+	return s.downloadMedia(messageID, chatJID)
 }
 
 // eventHandler maneja los eventos de WhatsApp

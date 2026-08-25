@@ -54,11 +54,11 @@ INSERT IGNORE INTO ai_providers (name, display_name, base_url, priority) VALUES
     ('qwen', 'Alibaba Qwen', 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation', 80);
 
 -- Insertar modelos disponibles para Gemini
-INSERT IGNORE INTO ai_models (provider_id, name, display_name, max_tokens, context_window, is_default) VALUES
-    (1, 'gemini-1.5-flash-latest', 'Gemini 1.5 Flash (Latest)', 8192, 1048576, 1),
-    (1, 'gemini-1.5-flash-8b-latest', 'Gemini 1.5 Flash 8B', 8192, 1048576, 0),
-    (1, 'gemini-1.5-pro-latest', 'Gemini 1.5 Pro (Latest)', 8192, 2097152, 0),
-    (1, 'gemini-2.0-flash-exp', 'Gemini 2.0 Flash (Experimental)', 8192, 1048576, 0);
+INSERT IGNORE INTO ai_models (provider_id, name, display_name, max_tokens, context_window, is_enabled, is_default, supports_vision) VALUES
+    (1, 'gemini-2.5-flash', 'Gemini 2.5 Flash', 8192, 1048576, 1, 1, 1),
+    (1, 'gemini-2.5-flash-lite', 'Gemini 2.5 Flash Lite', 8192, 1048576, 1, 0, 1),
+    (1, 'gemini-2.5-pro', 'Gemini 2.5 Pro', 8192, 2097152, 1, 0, 1),
+    (1, 'gemini-3.5-flash', 'Gemini 3.5 Flash', 8192, 1048576, 1, 0, 1);
 
 -- Insertar modelos disponibles para Groq
 INSERT IGNORE INTO ai_models (provider_id, name, display_name, max_tokens, context_window, is_default) VALUES

@@ -376,6 +376,11 @@ func (m *AIConfigManager) DeleteConfig(id int) error {
 	return err
 }
 
+// GetConfigByID obtiene una configuración de IA por ID
+func (m *AIConfigManager) GetConfigByID(configID int) (*AIConfigDB, error) {
+	return m.GetSecondaryConfig(configID)
+}
+
 // GetSecondaryConfig obtiene la configuración secundaria por ID
 func (m *AIConfigManager) GetSecondaryConfig(configID int) (*AIConfigDB, error) {
 	m.mu.RLock()

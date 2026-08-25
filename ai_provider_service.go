@@ -126,7 +126,7 @@ func (s *AIProviderService) callGemini(config *AIConfigDB, systemPrompt, userMes
 	
 	// Construir URL
 	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s",
-		config.ModelName, config.APIKey)
+		normalizeGeminiModelName(config.ModelName), config.APIKey)
 	
 	fmt.Printf("🤖 [Gemini] Enviando request...\n")
 	fmt.Printf("📏 Tamaño del prompt: %d caracteres\n", len(fullPrompt))
@@ -814,5 +814,251 @@ func (s *AIProviderService) NormalizeResponse(response []byte) ([]byte, error) {
 	}
 	
 	return cleanResponse, nil
+}
+
+// ChatTurn representa un turno en una conversación multi-turno
+type ChatTurn struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+// ChatWithHistory procesa una conversación multi-turno y devuelve texto libre
+func (s *AIProviderService) ChatWithHistory(config *AIConfigDB, systemPrompt string, history []ChatTurn) (string, error) {
+	if config == nil {
+		return "", fmt.Errorf("no AI configuration provided")
+	}
+
+	fmt.Printf("💬 [DevAgent] Usando: %s - %s (%s)\n", config.ProviderDisplay, config.ModelDisplay, config.Name)
+
+	var response string
+	var err error
+	switch config.ProviderName {
+	case "gemini":
+		response, err = s.chatGemini(config, systemPrompt, history)
+	case "groq":
+		response, err = s.chatOpenAICompatible(config, systemPrompt, history, "https://api.groq.com/openai/v1/chat/completions", "Groq", false)
+	case "grok":
+		response, err = s.chatOpenAICompatible(config, systemPrompt, history, "https://api.x.ai/v1/chat/completions", "Grok", false)
+	case "deepseek":
+		response, err = s.chatOpenAICompatible(config, systemPrompt, history, "https://api.deepseek.com/v1/chat/completions", "DeepSeek", false)
+	case "qwen":
+		response, err = s.chatQwen(config, systemPrompt, history)
+	default:
+		return "", fmt.Errorf("unsupported provider for chat: %s", config.ProviderName)
+	}
+
+	if err != nil {
+		s.configManager.ReportError(config.ID, err.Error())
+		return "", err
+	}
+
+	s.configManager.ReportSuccess(config.ID)
+	return response, nil
+}
+
+func (s *AIProviderService) chatOpenAICompatible(config *AIConfigDB, systemPrompt string, history []ChatTurn, url, label string, jsonMode bool) (string, error) {
+	messages := []map[string]interface{}{
+		{"role": "system", "content": systemPrompt},
+	}
+	for _, turn := range history {
+		messages = append(messages, map[string]interface{}{
+			"role":    turn.Role,
+			"content": turn.Content,
+		})
+	}
+
+	request := map[string]interface{}{
+		"model":       config.ModelName,
+		"messages":    messages,
+		"temperature": 0.7,
+		"max_tokens":  config.MaxTokens,
+	}
+	if jsonMode {
+		request["response_format"] = map[string]string{"type": "json_object"}
+	}
+
+	jsonData, err := json.Marshal(request)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %v", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+config.APIKey)
+
+	fmt.Printf("💬 [%s] Enviando chat con %d turnos...\n", label, len(history))
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to send request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("%s API error %d: %s", strings.ToLower(label), resp.StatusCode, string(body))
+	}
+
+	var chatResp struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(body, &chatResp); err != nil {
+		return "", fmt.Errorf("failed to parse %s response: %v", label, err)
+	}
+	if len(chatResp.Choices) == 0 {
+		return "", fmt.Errorf("empty response from %s", label)
+	}
+	return chatResp.Choices[0].Message.Content, nil
+}
+
+func (s *AIProviderService) chatGemini(config *AIConfigDB, systemPrompt string, history []ChatTurn) (string, error) {
+	contents := []map[string]interface{}{}
+	for _, turn := range history {
+		role := "user"
+		if turn.Role == "assistant" {
+			role = "model"
+		}
+		contents = append(contents, map[string]interface{}{
+			"role": role,
+			"parts": []map[string]interface{}{
+				{"text": turn.Content},
+			},
+		})
+	}
+
+	request := map[string]interface{}{
+		"systemInstruction": map[string]interface{}{
+			"parts": []map[string]interface{}{
+				{"text": systemPrompt},
+			},
+		},
+		"contents": contents,
+		"generationConfig": map[string]interface{}{
+			"temperature":     0.7,
+			"maxOutputTokens": config.MaxTokens,
+			"topP":            0.95,
+			"topK":            40,
+		},
+	}
+
+	jsonData, err := json.Marshal(request)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %v", err)
+	}
+
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s",
+		normalizeGeminiModelName(config.ModelName), config.APIKey)
+
+	fmt.Printf("💬 [Gemini] Enviando chat con %d turnos...\n", len(history))
+
+	resp, err := s.client.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("failed to send request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("gemini API error %d: %s", resp.StatusCode, string(body))
+	}
+
+	var geminiResp struct {
+		Candidates []struct {
+			Content struct {
+				Parts []struct {
+					Text string `json:"text"`
+				} `json:"parts"`
+			} `json:"content"`
+		} `json:"candidates"`
+	}
+	if err := json.Unmarshal(body, &geminiResp); err != nil {
+		return "", fmt.Errorf("failed to parse Gemini response: %v", err)
+	}
+	if len(geminiResp.Candidates) == 0 || len(geminiResp.Candidates[0].Content.Parts) == 0 {
+		return "", fmt.Errorf("empty response from Gemini")
+	}
+	return geminiResp.Candidates[0].Content.Parts[0].Text, nil
+}
+
+func (s *AIProviderService) chatQwen(config *AIConfigDB, systemPrompt string, history []ChatTurn) (string, error) {
+	messages := []map[string]interface{}{
+		{"role": "system", "content": systemPrompt},
+	}
+	for _, turn := range history {
+		messages = append(messages, map[string]interface{}{
+			"role":    turn.Role,
+			"content": turn.Content,
+		})
+	}
+
+	request := map[string]interface{}{
+		"model": config.ModelName,
+		"input": map[string]interface{}{
+			"messages": messages,
+		},
+		"parameters": map[string]interface{}{
+			"result_format": "message",
+			"temperature":   0.7,
+			"max_tokens":    config.MaxTokens,
+		},
+	}
+
+	jsonData, err := json.Marshal(request)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %v", err)
+	}
+
+	req, err := http.NewRequest("POST", "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+config.APIKey)
+
+	fmt.Printf("💬 [Qwen] Enviando chat con %d turnos...\n", len(history))
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to send request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("qwen API error %d: %s", resp.StatusCode, string(body))
+	}
+
+	var qwenResp struct {
+		Output struct {
+			Choices []struct {
+				Message struct {
+					Content string `json:"content"`
+				} `json:"message"`
+			} `json:"choices"`
+		} `json:"output"`
+	}
+	if err := json.Unmarshal(body, &qwenResp); err != nil {
+		return "", fmt.Errorf("failed to parse Qwen response: %v", err)
+	}
+	if len(qwenResp.Output.Choices) == 0 {
+		return "", fmt.Errorf("empty response from Qwen")
+	}
+	return qwenResp.Output.Choices[0].Message.Content, nil
 }
 

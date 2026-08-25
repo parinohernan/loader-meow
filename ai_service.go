@@ -161,8 +161,8 @@ func (s *AIService) processMessageWithRetry(content string, realPhone string, re
 	}
 	
 	// Llamar a Gemini API
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", 
-		s.config.Model, s.config.APIKey)
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s",
+		normalizeGeminiModelName(s.config.Model), s.config.APIKey)
 	
 	startTime := time.Now()
 	fmt.Printf("🤖 [%s] Enviando request a Gemini...\n", startTime.Format("15:04:05"))

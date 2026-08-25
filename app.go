@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -15,6 +16,7 @@ type App struct {
 	waService        *WhatsAppService
 	facebookService  *FacebookService
 	messageProcessor *MessageProcessor
+	devGroupAgent    *DevGroupAgent
 	qrCode           string
 }
 
@@ -38,6 +40,9 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	runtime.LogInfo(ctx, "Aplicación iniciada")
+	if err := a.initConfigServices(); err != nil {
+		runtime.LogError(ctx, fmt.Sprintf("Error inicializando configuración: %v", err))
+	}
 }
 
 // InitWhatsApp inicializa el servicio de WhatsApp
@@ -54,6 +59,14 @@ func (a *App) InitWhatsApp() error {
 	// El message processor ya está inicializado en el waService
 	a.messageProcessor = waService.messageProcessor
 
+	if err := a.initDevGroupAgent(); err != nil {
+		runtime.LogError(a.ctx, fmt.Sprintf("Error inicializando agente de desarrollo: %v", err))
+		a.devGroupAgent = nil
+	} else if a.devGroupAgent != nil {
+		cfg := a.devGroupAgent.GetConfig()
+		runtime.LogInfo(a.ctx, fmt.Sprintf("Agente dev listo (enabled=%v, grupo=%s)", cfg.Enabled, cfg.GroupJID))
+	}
+
 	// Configurar callbacks
 	waService.onMessage = func(msg ChatMessage) {
 		// Formatear el remitente mostrando nombre y teléfono
@@ -65,8 +78,19 @@ func (a *App) InitWhatsApp() error {
 			// LID (usuario con privacidad)
 			senderInfo = fmt.Sprintf("%s (LID:%s)", msg.SenderName, msg.SenderPhone)
 		}
-		runtime.LogInfo(a.ctx, fmt.Sprintf("Nuevo mensaje de %s en %s: %s", senderInfo, msg.ChatName, msg.Content))
+		runtime.LogInfo(a.ctx, fmt.Sprintf("Nuevo mensaje de %s en %s [%s]: %s", senderInfo, msg.ChatName, msg.ChatJID, msg.Content))
 		runtime.EventsEmit(a.ctx, "new-message", msg)
+
+		if a.devGroupAgent == nil {
+			if err := a.initDevGroupAgent(); err != nil {
+				runtime.LogError(a.ctx, fmt.Sprintf("DevAgent no inicializado: %v", err))
+			}
+		}
+		if a.devGroupAgent != nil {
+			a.devGroupAgent.HandleIncomingMessage(msg)
+		} else if strings.HasPrefix(strings.TrimSpace(msg.Content), "*") {
+			runtime.LogWarning(a.ctx, "Mensaje con * recibido pero el agente dev no está inicializado")
+		}
 	}
 
 	waService.onConnected = func() {
@@ -172,6 +196,24 @@ func (a *App) GetMessages(chatJID string) ([]ChatMessage, error) {
 	}
 
 	// Invertir el orden para mostrar los más antiguos primero
+	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
+		messages[i], messages[j] = messages[j], messages[i]
+	}
+
+	return messages, nil
+}
+
+// SearchMessagesInChat busca mensajes por texto dentro de un chat
+func (a *App) SearchMessagesInChat(chatJID, query string) ([]ChatMessage, error) {
+	if a.waService == nil {
+		return nil, fmt.Errorf("WhatsApp service not initialized")
+	}
+
+	messages, err := a.waService.messageStore.SearchMessagesInChat(chatJID, query, 200)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search messages: %v", err)
+	}
+
 	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
 		messages[i], messages[j] = messages[j], messages[i]
 	}
@@ -319,11 +361,50 @@ func (a *App) GetMessagesBySenderPhone(senderPhone string, limit int) ([]ChatMes
 
 // DeleteMessage elimina un mensaje de la base de datos
 func (a *App) DeleteMessage(messageID, chatJID string) error {
+	if err := a.ensureConfigReady(); err != nil {
+		return fmt.Errorf("failed to initialize: %v", err)
+	}
+	return a.waService.DeleteMessage(messageID, chatJID)
+}
+
+// GetImageMessages obtiene mensajes con imágenes para la galería
+func (a *App) GetImageMessages(filter string, limit int) ([]ImageMessageInfo, error) {
+	if err := a.ensureConfigReady(); err != nil {
+		return nil, fmt.Errorf("failed to initialize: %v", err)
+	}
+	return a.waService.GetImageMessages(filter, limit)
+}
+
+// GetMessageImagePreview obtiene la imagen de un mensaje como data URL
+func (a *App) GetMessageImagePreview(messageID, chatJID string) (ImagePreviewResponse, error) {
+	if a.waService == nil {
+		return ImagePreviewResponse{Success: false, Error: "WhatsApp service not initialized"}, nil
+	}
+	return a.waService.GetMessageImagePreview(messageID, chatJID)
+}
+
+// DiscardImageMessage descarta una imagen sin procesarla con IA
+func (a *App) DiscardImageMessage(messageID, chatJID string) error {
 	if a.waService == nil {
 		return fmt.Errorf("WhatsApp service not initialized")
 	}
+	return a.waService.DiscardImageMessage(messageID, chatJID)
+}
 
-	return a.waService.DeleteMessage(messageID, chatJID)
+// DeleteAllPendingImageMessages elimina todas las imágenes pendientes de la galería
+func (a *App) DeleteAllPendingImageMessages() (int64, error) {
+	if err := a.ensureConfigReady(); err != nil {
+		return 0, fmt.Errorf("failed to initialize: %v", err)
+	}
+	return a.waService.DeletePendingImageMessages()
+}
+
+// DeleteImageMessages elimina mensajes con imagen mostrados en la galería
+func (a *App) DeleteImageMessages(refs []ImageMessageRef) (int64, error) {
+	if err := a.ensureConfigReady(); err != nil {
+		return 0, fmt.Errorf("failed to initialize: %v", err)
+	}
+	return a.waService.DeleteImageMessages(refs)
 }
 
 // DeleteMessagesBySenderPhone elimina todos los mensajes de un remitente específico
@@ -411,6 +492,20 @@ func (a *App) SimulateMessage(messageContent, realPhone string) (ProcessingResul
 	}
 
 	result := a.messageProcessor.SimulateMessage(messageContent, realPhone)
+	return result, nil
+}
+
+// SimulateImageMessage simula OCR + procesamiento IA desde una imagen (base64)
+func (a *App) SimulateImageMessage(imageBase64, caption, realPhone string) (ProcessingResult, error) {
+	if a.messageProcessor == nil {
+		return ProcessingResult{}, fmt.Errorf("message processor not initialized")
+	}
+
+	if realPhone == "" {
+		realPhone = "+5490000000000"
+	}
+
+	result := a.messageProcessor.SimulateImageMessage(imageBase64, caption, realPhone)
 	return result, nil
 }
 
@@ -566,13 +661,138 @@ func (a *App) UpdateSystemConfig(key, value, description string) error {
 	return a.waService.systemConfigManager.UpdateConfig(key, value, description)
 }
 
+// GetMessageBlacklistConfig obtiene la configuración del filtro de palabras
+func (a *App) GetMessageBlacklistConfig() (MessageBlacklistConfig, error) {
+	if err := a.ensureConfigReady(); err != nil {
+		return MessageBlacklistConfig{}, err
+	}
+	if a.messageProcessor == nil {
+		if a.waService != nil {
+			a.messageProcessor = a.waService.messageProcessor
+		}
+	}
+	if a.messageProcessor == nil {
+		return MessageBlacklistConfig{}, fmt.Errorf("message processor not initialized")
+	}
+	return a.messageProcessor.GetBlacklistConfig(), nil
+}
+
+// SetMessageBlacklistConfig guarda la configuración del filtro de palabras
+func (a *App) SetMessageBlacklistConfig(enabled bool, wordsInput string) error {
+	if err := a.ensureConfigReady(); err != nil {
+		return err
+	}
+	if a.messageProcessor == nil {
+		if a.waService != nil {
+			a.messageProcessor = a.waService.messageProcessor
+		}
+	}
+	if a.messageProcessor == nil {
+		return fmt.Errorf("message processor not initialized")
+	}
+	return a.messageProcessor.SetBlacklistConfig(enabled, wordsInput)
+}
+
 // ===================================
 // Gestión de Configuración IA
 // ===================================
 
+func (a *App) ensureConfigReady() error {
+	if a.waService != nil && a.waService.ocrConfigManager != nil {
+		if a.devGroupAgent == nil {
+			return a.initDevGroupAgent()
+		}
+		return nil
+	}
+	return a.initConfigServices()
+}
+
+func (a *App) initConfigServices() error {
+	if a.waService != nil && a.waService.ocrConfigManager != nil {
+		return nil
+	}
+
+	messageStore, err := NewMessageStore()
+	if err != nil {
+		return fmt.Errorf("failed to connect database: %v", err)
+	}
+
+	if err := messageStore.InitOCRConfigTables(); err != nil {
+		return fmt.Errorf("failed to init OCR tables: %v", err)
+	}
+	if err := messageStore.InitAIConfigTables(); err != nil {
+		return fmt.Errorf("failed to init AI tables: %v", err)
+	}
+	if err := messageStore.InitDevAgentTables(); err != nil {
+		return fmt.Errorf("failed to init dev agent tables: %v", err)
+	}
+
+	if a.waService == nil {
+		a.waService = &WhatsAppService{}
+	}
+
+	a.waService.messageStore = messageStore
+	a.waService.aiConfigManager = NewAIConfigManager(messageStore.db)
+	a.waService.ocrConfigManager = NewOCRConfigManager(messageStore.db)
+	if a.waService.systemConfigManager == nil {
+		a.waService.systemConfigManager = NewSystemConfigManager(messageStore.db)
+	}
+
+	if err := a.initDevGroupAgent(); err != nil {
+		return fmt.Errorf("failed to init dev group agent: %v", err)
+	}
+
+	return nil
+}
+
+func (a *App) initDevGroupAgent() error {
+	if a.waService == nil || a.waService.messageStore == nil || a.waService.aiConfigManager == nil {
+		return fmt.Errorf("whatsapp service not ready for dev agent")
+	}
+
+	aiProvider := NewAIProviderService(a.waService.aiConfigManager)
+	if a.messageProcessor != nil && a.messageProcessor.aiProviderService != nil {
+		aiProvider = a.messageProcessor.aiProviderService
+	}
+
+	store := NewDevAgentStore(a.waService.messageStore.db, a.waService.systemConfigManager)
+
+	if a.devGroupAgent != nil {
+		a.devGroupAgent.UpdateDependencies(a.waService, a.waService.messageStore, aiProvider)
+		a.devGroupAgent.store = store
+		a.devGroupAgent.SetLogger(func(msg string) {
+			if a.ctx != nil {
+				runtime.LogInfo(a.ctx, msg)
+			}
+		})
+		return a.devGroupAgent.ReloadConfig()
+	}
+
+	agent, err := NewDevGroupAgent(
+		store,
+		a.waService.messageStore,
+		aiProvider,
+		a.waService.aiConfigManager,
+		a.waService,
+	)
+	if err != nil {
+		return err
+	}
+	agent.SetLogger(func(msg string) {
+		if a.ctx != nil {
+			runtime.LogInfo(a.ctx, msg)
+		}
+	})
+	a.devGroupAgent = agent
+	return nil
+}
+
 // GetAIProviders obtiene todos los proveedores de IA disponibles
 func (a *App) GetAIProviders() ([]AIProvider, error) {
-	if a.waService == nil || a.waService.aiConfigManager == nil {
+	if err := a.ensureConfigReady(); err != nil {
+		return nil, fmt.Errorf("failed to initialize config: %v", err)
+	}
+	if a.waService.aiConfigManager == nil {
 		return nil, fmt.Errorf("AI config manager not initialized")
 	}
 	return a.waService.aiConfigManager.GetAllProviders()
@@ -733,6 +953,136 @@ func (a *App) TestAIConfig(configID int) (map[string]interface{}, error) {
 	return result, nil
 }
 
+// ===== FUNCIONES PARA CONFIGURACIÓN OCR =====
+
+func (a *App) GetOCRConfigs() ([]OCRConfigDB, error) {
+	if err := a.ensureConfigReady(); err != nil {
+		return nil, fmt.Errorf("failed to initialize config: %v", err)
+	}
+	if a.waService.ocrConfigManager == nil {
+		return nil, fmt.Errorf("OCR config manager not initialized")
+	}
+	return a.waService.ocrConfigManager.GetAllConfigs()
+}
+
+func (a *App) GetActiveOCRConfig() (*OCRConfigDB, error) {
+	if err := a.ensureConfigReady(); err != nil {
+		return nil, fmt.Errorf("failed to initialize config: %v", err)
+	}
+	if a.waService.ocrConfigManager == nil {
+		return nil, fmt.Errorf("OCR config manager not initialized")
+	}
+	return a.waService.ocrConfigManager.GetActiveConfig()
+}
+
+func (a *App) GetOCRProviders() ([]AIProvider, error) {
+	if err := a.ensureConfigReady(); err != nil {
+		return nil, fmt.Errorf("failed to initialize config: %v", err)
+	}
+	if a.waService.ocrConfigManager == nil {
+		return nil, fmt.Errorf("OCR config manager not initialized")
+	}
+	return a.waService.ocrConfigManager.GetOCRProviders()
+}
+
+func (a *App) GetVisionModelsByProvider(providerID int) ([]AIModel, error) {
+	if err := a.ensureConfigReady(); err != nil {
+		return nil, fmt.Errorf("failed to initialize config: %v", err)
+	}
+	if a.waService.ocrConfigManager == nil {
+		return nil, fmt.Errorf("OCR config manager not initialized")
+	}
+	return a.waService.ocrConfigManager.GetVisionModels(providerID)
+}
+
+func (a *App) AddOCRConfig(providerID, modelID int, apiKey, name string) error {
+	if a.waService == nil || a.waService.ocrConfigManager == nil {
+		return fmt.Errorf("OCR config manager not initialized")
+	}
+	return a.waService.ocrConfigManager.AddConfig(providerID, modelID, apiKey, name)
+}
+
+func (a *App) AddOCRConfigWithCustomModel(providerID int, modelName, apiKey, configName string) error {
+	if a.waService == nil || a.waService.ocrConfigManager == nil {
+		return fmt.Errorf("OCR config manager not initialized")
+	}
+	return a.waService.ocrConfigManager.AddConfigWithCustomModel(providerID, modelName, apiKey, configName)
+}
+
+func (a *App) UpdateOCRConfig(id int, apiKey, name string, isEnabled bool) error {
+	if a.waService == nil || a.waService.ocrConfigManager == nil {
+		return fmt.Errorf("OCR config manager not initialized")
+	}
+	return a.waService.ocrConfigManager.UpdateConfig(id, apiKey, name, isEnabled)
+}
+
+func (a *App) DeleteOCRConfig(id int) error {
+	if a.waService == nil || a.waService.ocrConfigManager == nil {
+		return fmt.Errorf("OCR config manager not initialized")
+	}
+	return a.waService.ocrConfigManager.DeleteConfig(id)
+}
+
+func (a *App) SetActiveOCRConfig(id int) error {
+	if a.waService == nil || a.waService.ocrConfigManager == nil {
+		return fmt.Errorf("OCR config manager not initialized")
+	}
+	return a.waService.ocrConfigManager.SetActiveConfig(id)
+}
+
+func (a *App) ResetOCRConfigErrors(id int) error {
+	if a.waService == nil || a.waService.ocrConfigManager == nil {
+		return fmt.Errorf("OCR config manager not initialized")
+	}
+	return a.waService.ocrConfigManager.ResetErrorCount(id)
+}
+
+func (a *App) TestOCRConfig(configID int) (map[string]interface{}, error) {
+	if a.waService == nil || a.waService.ocrConfigManager == nil {
+		return nil, fmt.Errorf("OCR config manager not initialized")
+	}
+
+	configs, err := a.waService.ocrConfigManager.GetAllConfigs()
+	if err != nil {
+		return nil, err
+	}
+
+	var testConfig *OCRConfigDB
+	for _, c := range configs {
+		if c.ID == configID {
+			testConfig = &c
+			break
+		}
+	}
+	if testConfig == nil {
+		return nil, fmt.Errorf("OCR config not found")
+	}
+
+	ocrService := NewOCRService(a.waService.ocrConfigManager)
+	startTime := time.Now()
+
+	// Crear imagen PNG mínima 1x1 para prueba
+	testImagePath := "store/ocr_test.png"
+	if err := createMinimalTestPNG(testImagePath); err != nil {
+		return nil, fmt.Errorf("failed to create test image: %v", err)
+	}
+
+	_, err = ocrService.ExtractTextFromImage(testConfig, testImagePath)
+	elapsed := time.Since(startTime).Seconds()
+
+	result := map[string]interface{}{
+		"success":  err == nil,
+		"elapsed":  elapsed,
+		"provider": testConfig.ProviderDisplay,
+		"model":    testConfig.ModelDisplay,
+	}
+	if err != nil {
+		result["error"] = err.Error()
+	}
+
+	return result, nil
+}
+
 // Disconnect desconecta WhatsApp
 func (a *App) Disconnect() {
 	if a.waService != nil {
@@ -854,6 +1204,145 @@ func (a *App) UpdateFacebookAccessToken(accessToken string) error {
 	a.facebookService.accessToken = accessToken
 	runtime.LogInfo(a.ctx, "Token de Facebook actualizado")
 	return nil
+}
+
+// GetDevAgentConfig obtiene la configuración del agente de desarrollo
+func (a *App) GetDevAgentConfig() (DevAgentConfig, error) {
+	if err := a.ensureConfigReady(); err != nil {
+		return DevAgentConfig{}, err
+	}
+	if a.devGroupAgent == nil {
+		if err := a.initDevGroupAgent(); err != nil {
+			return DevAgentConfig{}, err
+		}
+	}
+	return a.devGroupAgent.GetConfig(), nil
+}
+
+// SetDevAgentConfig guarda la configuración del agente de desarrollo
+func (a *App) SetDevAgentConfig(enabled bool, groupJID string, contextMessages int, triggerPrefix string, aiConfigID int) error {
+	if err := a.ensureConfigReady(); err != nil {
+		return err
+	}
+	if a.devGroupAgent == nil {
+		if err := a.initDevGroupAgent(); err != nil {
+			return err
+		}
+	}
+	cfg := DevAgentConfig{
+		Enabled:         enabled,
+		GroupJID:        strings.TrimSpace(groupJID),
+		ContextMessages: contextMessages,
+		TriggerPrefix:   triggerPrefix,
+		AIConfigID:      aiConfigID,
+	}
+	if err := a.devGroupAgent.SetConfig(cfg); err != nil {
+		return err
+	}
+	runtime.LogInfo(a.ctx, fmt.Sprintf("DevAgent guardado: enabled=%v group=%s", enabled, cfg.GroupJID))
+	return nil
+}
+
+// EnableDevAgent activa o desactiva el agente sin cambiar el resto de la config
+func (a *App) EnableDevAgent(enabled bool) error {
+	if err := a.ensureConfigReady(); err != nil {
+		return err
+	}
+	if a.devGroupAgent == nil {
+		if err := a.initDevGroupAgent(); err != nil {
+			return err
+		}
+	}
+	cfg := a.devGroupAgent.GetConfig()
+	cfg.Enabled = enabled
+	if err := a.devGroupAgent.SetConfig(cfg); err != nil {
+		return err
+	}
+	runtime.LogInfo(a.ctx, fmt.Sprintf("DevAgent enabled=%v", enabled))
+	return nil
+}
+
+// GetDevAgentReminders obtiene recordatorios del agente
+func (a *App) GetDevAgentReminders(status string) ([]DevAgentReminder, error) {
+	if err := a.ensureConfigReady(); err != nil {
+		return nil, err
+	}
+	if a.devGroupAgent == nil {
+		if err := a.initDevGroupAgent(); err != nil {
+			return nil, err
+		}
+	}
+	return a.devGroupAgent.store.GetReminders(status, 50)
+}
+
+// MarkDevReminderDone marca un recordatorio como completado
+func (a *App) MarkDevReminderDone(id int) error {
+	if err := a.ensureConfigReady(); err != nil {
+		return err
+	}
+	if a.devGroupAgent == nil {
+		if err := a.initDevGroupAgent(); err != nil {
+			return err
+		}
+	}
+	return a.devGroupAgent.store.MarkReminderDone(id)
+}
+
+// TestDevAgent simula una respuesta del agente sin enviar a WhatsApp
+func (a *App) TestDevAgent(message string) (string, error) {
+	if err := a.ensureConfigReady(); err != nil {
+		return "", err
+	}
+	if a.devGroupAgent == nil {
+		if err := a.initDevGroupAgent(); err != nil {
+			return "", err
+		}
+	}
+	return a.devGroupAgent.TestMessage(message)
+}
+
+// DevAgentDiagnostics estado de diagnóstico del agente
+type DevAgentDiagnostics struct {
+	AgentReady      bool   `json:"agent_ready"`
+	Enabled         bool   `json:"enabled"`
+	GroupJID        string `json:"group_jid"`
+	TriggerPrefix   string `json:"trigger_prefix"`
+	AIConfigID      int    `json:"ai_config_id"`
+	ActiveAIConfig  string `json:"active_ai_config"`
+	WhatsAppConnected bool `json:"whatsapp_connected"`
+}
+
+// GetDevAgentDiagnostics devuelve estado del agente para depuración
+func (a *App) GetDevAgentDiagnostics() (DevAgentDiagnostics, error) {
+	diag := DevAgentDiagnostics{}
+	if a.waService != nil {
+		diag.WhatsAppConnected = a.waService.IsConnected()
+	}
+	if err := a.ensureConfigReady(); err != nil {
+		return diag, err
+	}
+	if a.devGroupAgent == nil {
+		if err := a.initDevGroupAgent(); err != nil {
+			return diag, err
+		}
+	}
+	diag.AgentReady = a.devGroupAgent != nil
+	if a.devGroupAgent == nil {
+		return diag, nil
+	}
+	cfg := a.devGroupAgent.GetConfig()
+	diag.Enabled = cfg.Enabled
+	diag.GroupJID = cfg.GroupJID
+	diag.TriggerPrefix = cfg.TriggerPrefix
+	diag.AIConfigID = cfg.AIConfigID
+	if cfg.AIConfigID > 0 {
+		if c, err := a.waService.aiConfigManager.GetConfigByID(cfg.AIConfigID); err == nil {
+			diag.ActiveAIConfig = fmt.Sprintf("%s - %s (%s)", c.ProviderDisplay, c.ModelDisplay, c.Name)
+		}
+	} else if c, err := a.waService.aiConfigManager.GetActiveConfig(); err == nil {
+		diag.ActiveAIConfig = fmt.Sprintf("%s - %s (%s)", c.ProviderDisplay, c.ModelDisplay, c.Name)
+	}
+	return diag, nil
 }
 
 // shutdown se llama cuando la app se cierra

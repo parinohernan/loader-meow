@@ -320,6 +320,98 @@
         text-overflow: ellipsis;
       }
 
+      .chat-jid {
+        color: #667781;
+        font-size: 11px;
+        font-family: monospace;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        margin-top: 2px;
+      }
+
+      .chats-search-box {
+        padding: 8px 12px;
+        background: #111b21;
+        border-bottom: 1px solid #2a3942;
+      }
+
+      .chats-search-box input,
+      .messages-search-box input {
+        width: 100%;
+        background: #2a3942;
+        border: 1px solid #3b4043;
+        color: #e9edef;
+        padding: 10px 12px;
+        border-radius: 8px;
+        font-size: 13px;
+      }
+
+      .chats-search-box input:focus,
+      .messages-search-box input:focus {
+        outline: none;
+        border-color: #25d366;
+      }
+
+      .messages-search-box {
+        padding: 8px 16px;
+        background: #202c33;
+        border-bottom: 1px solid #2a3942;
+        display: none;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .messages-search-box.active {
+        display: flex;
+      }
+
+      .messages-search-box input {
+        flex: 1;
+      }
+
+      .messages-search-meta {
+        color: #8696a0;
+        font-size: 12px;
+        white-space: nowrap;
+      }
+
+      .message-search-hit {
+        background: rgba(37, 211, 102, 0.35);
+        color: inherit;
+        border-radius: 2px;
+        padding: 0 2px;
+      }
+
+      .chat-header-info {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .chat-header-jid {
+        color: #8696a0;
+        font-size: 11px;
+        font-family: monospace;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .copy-jid-btn {
+        background: #2a3942;
+        border: 1px solid #3b4a54;
+        color: #aebac1;
+        font-size: 12px;
+        padding: 4px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+
+      .copy-jid-btn:hover {
+        background: #374955;
+      }
+
       .chat-time {
         color: #8696a0;
         font-size: 12px;
@@ -1203,6 +1295,16 @@
         color: #8696a0;
         font-size: 11px;
         margin-top: 5px;
+      }
+
+      .message-preview-item .message-image-thumb {
+        max-width: 200px;
+        max-height: 150px;
+        border-radius: 6px;
+        margin-top: 8px;
+        cursor: pointer;
+        border: 1px solid #374248;
+        display: block;
       }
 
       .message-preview-actions {
@@ -2289,6 +2391,71 @@
         font-size: 16px;
       }
 
+      .simulator-mode-tabs {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 20px;
+      }
+
+      .simulator-mode-tab {
+        flex: 1;
+        padding: 10px 16px;
+        background: #111b21;
+        border: 1px solid #374248;
+        border-radius: 6px;
+        color: #8696a0;
+        cursor: pointer;
+        font-size: 14px;
+        transition: all 0.2s;
+      }
+
+      .simulator-mode-tab.active {
+        background: #25d366;
+        border-color: #25d366;
+        color: #111b21;
+        font-weight: 600;
+      }
+
+      .simulator-mode-tab:hover:not(.active) {
+        border-color: #25d366;
+        color: #e9edef;
+      }
+
+      .simulator-image-preview {
+        margin-top: 12px;
+        max-width: 100%;
+        max-height: 280px;
+        border-radius: 8px;
+        border: 1px solid #374248;
+        display: none;
+      }
+
+      .simulator-image-preview.visible {
+        display: block;
+      }
+
+      .simulator-file-input {
+        width: 100%;
+        padding: 10px;
+        background: #111b21;
+        border: 1px solid #374248;
+        border-radius: 6px;
+        color: #e9edef;
+        box-sizing: border-box;
+      }
+
+      .simulator-ocr-text {
+        background: #111b21;
+        border: 1px solid #374248;
+        border-radius: 6px;
+        padding: 12px;
+        margin-top: 15px;
+        color: #e9edef;
+        font-size: 13px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
       .simulator-results {
         background: #202c33;
         padding: 20px;
@@ -2528,6 +2695,203 @@
         font-size: 12px;
         overflow-x: auto;
       }
+
+      /* === GALERÍA DE IMÁGENES === */
+      .images-panel {
+        display: none;
+        flex-direction: column;
+        background: #0b141a;
+        height: 100vh;
+        width: calc(100% - 140px);
+        overflow-y: auto;
+        margin-left: 140px;
+        padding: 20px;
+        box-sizing: border-box;
+      }
+
+      .images-panel.active {
+        display: flex;
+      }
+
+      .images-header {
+        margin-bottom: 20px;
+      }
+
+      .images-header h2 {
+        color: #e9edef;
+        margin-bottom: 8px;
+      }
+
+      .images-header p {
+        color: #8696a0;
+        font-size: 14px;
+        margin-bottom: 15px;
+      }
+
+      .images-controls {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+        margin-bottom: 20px;
+      }
+
+      .images-filter-btn {
+        padding: 8px 16px;
+        background: #111b21;
+        border: 1px solid #374248;
+        border-radius: 6px;
+        color: #8696a0;
+        cursor: pointer;
+        font-size: 13px;
+      }
+
+      .images-filter-btn.active {
+        background: #25d366;
+        border-color: #25d366;
+        color: #111b21;
+        font-weight: 600;
+      }
+
+      .images-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 16px;
+      }
+
+      .image-card {
+        background: #202c33;
+        border-radius: 10px;
+        overflow: hidden;
+        border: 1px solid #374248;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .image-card-thumb {
+        width: 100%;
+        height: 180px;
+        object-fit: cover;
+        background: #111b21;
+        cursor: pointer;
+      }
+
+      .image-card-thumb.loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #8696a0;
+        font-size: 13px;
+      }
+
+      .image-card-body {
+        padding: 12px;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .image-card-meta {
+        font-size: 12px;
+        color: #8696a0;
+      }
+
+      .image-card-caption {
+        font-size: 13px;
+        color: #e9edef;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .image-card-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 11px;
+        font-weight: 600;
+      }
+
+      .image-card-badge.pending {
+        background: #3d3420;
+        color: #ffc107;
+      }
+
+      .image-card-badge.processed {
+        background: #1f3a2c;
+        color: #25d366;
+      }
+
+      .image-card-actions {
+        display: flex;
+        gap: 6px;
+        margin-top: 8px;
+        flex-wrap: wrap;
+      }
+
+      .image-card-actions button {
+        flex: 1;
+        min-width: 60px;
+        padding: 6px 8px;
+        font-size: 12px;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+      }
+
+      .image-preview-modal {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.85);
+        z-index: 10000;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+      }
+
+      .image-preview-modal.show {
+        display: flex;
+      }
+
+      .image-preview-content {
+        max-width: 90vw;
+        max-height: 90vh;
+        background: #202c33;
+        border-radius: 12px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .image-preview-content img {
+        max-width: 90vw;
+        max-height: 70vh;
+        object-fit: contain;
+        background: #111b21;
+      }
+
+      .image-preview-info {
+        padding: 16px;
+        color: #e9edef;
+      }
+
+      .image-preview-actions {
+        padding: 0 16px 16px;
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .message-image-thumb {
+        max-width: 240px;
+        max-height: 180px;
+        border-radius: 8px;
+        margin-top: 6px;
+        cursor: pointer;
+        border: 1px solid #374248;
+      }
     </style>
   </head>
   <body>
@@ -2560,6 +2924,9 @@
           </button>
           <button class="tab" onclick="showTab('processing')">
             🤖 Procesamiento IA
+          </button>
+          <button class="tab" onclick="showTab('images')">
+            🖼️ Imágenes
           </button>
           <button class="tab" onclick="showTab('aiconfig')">
             ⚙️ Configuración IA
@@ -2600,6 +2967,14 @@
                 <h2>Chats</h2>
                 <button class="refresh-btn" onclick="refreshChats()">🔄</button>
               </div>
+              <div class="chats-search-box">
+                <input
+                  type="text"
+                  id="chatsSearch"
+                  placeholder="Buscar chat por nombre o JID..."
+                  oninput="filterChatsList()"
+                />
+              </div>
               <div id="chatsList" class="chats-list">
                 <div class="empty-state">
                   <h3>No hay chats</h3>
@@ -2612,7 +2987,22 @@
             <div class="messages-content">
               <div class="messages-header">
                 <button class="back-btn" onclick="closeChat()">←</button>
-                <h3 id="chatTitle">Selecciona un chat</h3>
+                <div class="chat-header-info">
+                  <h3 id="chatTitle">Selecciona un chat</h3>
+                  <div id="chatHeaderJID" class="chat-header-jid"></div>
+                </div>
+                <button id="copyChatJIDBtn" class="copy-jid-btn" onclick="copyCurrentChatJID()" style="display: none;">📋 Copiar JID</button>
+              </div>
+              <div id="messagesSearchBox" class="messages-search-box">
+                <input
+                  type="text"
+                  id="chatMessagesSearch"
+                  placeholder="Buscar mensajes en este chat..."
+                  onkeydown="if(event.key==='Enter') searchInCurrentChat()"
+                />
+                <button class="copy-jid-btn" onclick="searchInCurrentChat()">Buscar</button>
+                <button class="copy-jid-btn" onclick="clearChatMessageSearch()" title="Limpiar">✕</button>
+                <span id="chatMessagesSearchMeta" class="messages-search-meta"></span>
               </div>
               <div id="messagesContainer" class="messages-container">
                 <div class="empty-state">
@@ -2691,7 +3081,15 @@
           <div class="processing-stats">
             <div class="stat-card clickable" onclick="showPendingMessages()" title="Clic para ver mensajes pendientes">
               <span class="stat-value" id="pendingCount">0</span>
-              <span class="stat-label">📋 Mensajes pendientes</span>
+              <span class="stat-label">📋 Total pendientes</span>
+            </div>
+            <div class="stat-card" title="Mensajes de texto puro pendientes">
+              <span class="stat-value" id="pendingTextCount">0</span>
+              <span class="stat-label">📝 Texto pendiente</span>
+            </div>
+            <div class="stat-card" title="Mensajes con imagen pendientes">
+              <span class="stat-value" id="pendingImageCount">0</span>
+              <span class="stat-label">🖼️ Imágenes pendientes</span>
             </div>
             <div class="stat-card clickable" onclick="showProcessedMessages()" title="Clic para ver mensajes procesados">
               <span class="stat-value" id="processedCount">0</span>
@@ -2770,6 +3168,41 @@
           </div>
         </div>
 
+        <!-- Panel de Galería de Imágenes -->
+        <div id="imagesPanel" class="images-panel">
+          <div class="images-header">
+            <h2>🖼️ Galería de Imágenes</h2>
+            <p>Visualiza, descarta o elimina mensajes con imágenes recibidos por WhatsApp</p>
+          </div>
+          <div class="images-controls">
+            <button class="images-filter-btn active" data-filter="pending" onclick="setImagesFilter('pending')">⏳ Pendientes</button>
+            <button class="images-filter-btn" data-filter="processed" onclick="setImagesFilter('processed')">✅ Procesadas</button>
+            <button class="images-filter-btn" data-filter="all" onclick="setImagesFilter('all')">📋 Todas</button>
+            <button class="btn-secondary" onclick="loadImageGallery()">🔄 Actualizar</button>
+            <button class="btn-danger" id="deleteAllPendingImagesBtn" style="display: none;" onclick="deleteAllPendingImages()">🗑️ Eliminar visibles</button>
+          </div>
+          <div id="imagesGalleryGrid" class="images-grid">
+            <div class="empty-state"><p>Cargando imágenes...</p></div>
+          </div>
+        </div>
+
+        <!-- Modal vista ampliada de imagen -->
+        <div id="imagePreviewModal" class="image-preview-modal" onclick="closeImagePreview(event)">
+          <div class="image-preview-content" onclick="event.stopPropagation()">
+            <img id="imagePreviewFull" src="" alt="Vista previa">
+            <div class="image-preview-info">
+              <div id="imagePreviewMeta"></div>
+              <div id="imagePreviewCaption" style="margin-top:8px;color:#8696a0;font-size:13px;"></div>
+            </div>
+            <div class="image-preview-actions">
+              <button class="btn-primary" id="imagePreviewProcessBtn">🤖 Procesar</button>
+              <button class="btn-secondary" id="imagePreviewDiscardBtn">⏭️ Descartar</button>
+              <button class="btn-danger" id="imagePreviewDeleteBtn">🗑️ Eliminar</button>
+              <button class="btn-secondary" onclick="closeImagePreview()">✕ Cerrar</button>
+            </div>
+          </div>
+        </div>
+
         <!-- Panel de Configuración IA -->
         <div id="aiConfigPanel" class="ai-config-panel">
           <div class="ai-config-header">
@@ -2802,6 +3235,28 @@
               </button>
             </div>
             <div id="configsList" class="configs-list">
+              <!-- Se cargarán dinámicamente -->
+            </div>
+          </div>
+
+          <!-- Sección de Configuración OCR / Visión -->
+          <div class="configs-section" style="margin-top: 30px; border-top: 1px solid #2f3a47; padding-top: 25px;">
+            <div class="section-header">
+              <h3>👁️ Configuración OCR / Visión</h3>
+              <button class="btn-primary" onclick="showAddOCRConfigModal()">
+                ➕ Agregar Key OCR
+              </button>
+            </div>
+            <p style="color: #8696a0; font-size: 14px; margin-bottom: 15px;">
+              Configuración independiente para extraer texto de imágenes antes del procesamiento de cargas.
+            </p>
+            <div class="active-config-section">
+              <h3 style="font-size: 15px;">🎯 OCR Activo</h3>
+              <div id="activeOCRConfigDisplay" class="active-config-display">
+                <div class="loading-spinner">Cargando...</div>
+              </div>
+            </div>
+            <div id="ocrConfigsList" class="configs-list">
               <!-- Se cargarán dinámicamente -->
             </div>
           </div>
@@ -2906,6 +3361,86 @@
             </div>
           </div>
 
+          <!-- Agente de Desarrollo WhatsApp -->
+          <div class="config-section">
+            <div class="config-section-header">
+              <h3>🤖 Agente de Desarrollo</h3>
+              <p class="config-description">Asistente IA para un grupo de WhatsApp. Responde solo a mensajes que empiezan con * (ej: <code>* hola equipo</code>)</p>
+            </div>
+            <div class="config-form">
+              <div id="devAgentStatus" class="test-result" style="margin-bottom: 12px;"></div>
+              <div class="form-group">
+                <label>
+                  <input type="checkbox" id="devAgentEnabled"> Agente habilitado
+                </label>
+                <button type="button" class="btn-secondary" onclick="enableDevAgentNow(true)" style="margin-left: 12px;">▶️ Activar ahora</button>
+                <button type="button" class="btn-secondary" onclick="enableDevAgentNow(false)">⏸️ Desactivar</button>
+              </div>
+              <div class="form-group">
+                <label>JID del grupo de desarrollo:</label>
+                <div class="key-input-group" style="margin-bottom: 8px;">
+                  <select id="devAgentGroupSelect" onchange="selectDevAgentGroupFromList()" style="flex: 1;">
+                    <option value="">— Seleccionar grupo de la lista —</option>
+                  </select>
+                  <button class="btn-secondary" onclick="loadDevAgentGroupOptions()">🔄</button>
+                </div>
+                <input type="text" id="devAgentGroupJID" placeholder="120363...@g.us">
+                <small>El JID aparece en la lista de chats (pestaña Mensajes) o seleccioná un grupo arriba</small>
+              </div>
+              <div class="form-group">
+                <label>Mensajes de contexto:</label>
+                <input type="number" id="devAgentContextMessages" min="10" max="50" value="30">
+              </div>
+              <div class="form-group">
+                <label>Prefijo trigger:</label>
+                <input type="text" id="devAgentTriggerPrefix" value="*" maxlength="5" style="width: 60px;">
+              </div>
+              <div class="form-group">
+                <label>Config IA dedicada (opcional):</label>
+                <input type="number" id="devAgentAIConfigID" placeholder="Vacío = usa la IA activa" min="0">
+                <small>Dejá vacío o 0 para usar la config activa en ⚙️ Configuración IA. Solo poné un número si querés otra API key/modelo (es el ID de la fila en Configuración IA).</small>
+              </div>
+              <button class="btn-primary" onclick="saveDevAgentConfig()">💾 Guardar Agente</button>
+              <button class="btn-secondary" onclick="loadDevAgentDiagnostics()" style="margin-left: 8px;">🔍 Diagnóstico</button>
+
+              <div class="test-section" style="margin-top: 20px;">
+                <h4 style="color: #e9edef; font-size: 14px; margin-bottom: 10px;">🧪 Probar Agente</h4>
+                <div class="key-input-group" style="margin-bottom: 10px;">
+                  <input type="text" id="devAgentTestMessage" placeholder="* ¿Qué quedó pendiente?" style="flex: 2;">
+                  <button class="btn-secondary" onclick="testDevAgent()">🧪 Probar</button>
+                </div>
+                <div id="devAgentTestResult" class="test-result"></div>
+              </div>
+
+              <div style="margin-top: 20px;">
+                <h4 style="color: #e9edef; font-size: 14px; margin-bottom: 10px;">📋 Recordatorios Pendientes</h4>
+                <button class="btn-secondary" onclick="loadDevAgentReminders()" style="margin-bottom: 10px;">🔄 Actualizar</button>
+                <div id="devAgentRemindersList"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Blacklist de palabras (cargas) -->
+          <div class="config-section">
+            <div class="config-section-header">
+              <h3>Filtro blacklist de palabras</h3>
+              <p class="config-description">Descarta mensajes de cargas que contengan estas palabras antes de llamar a la IA. No afecta al agente dev.</p>
+            </div>
+            <div class="config-form">
+              <div class="form-group">
+                <label>
+                  <input type="checkbox" id="messageBlacklistEnabled"> Filtro activo
+                </label>
+              </div>
+              <div class="form-group">
+                <label>Palabras (una por línea):</label>
+                <textarea id="messageBlacklistWords" rows="8" placeholder="uruguay&#10;chile&#10;brasil" style="width:100%; background:#111b21; color:#e9edef; border:1px solid #2a3942; border-radius:8px; padding:10px; font-family:monospace;"></textarea>
+                <small>Excepciones automáticas: Concepción del Uruguay, Chilecito, Perugorría (ciudades argentinas).</small>
+              </div>
+              <button class="btn-primary" onclick="saveMessageBlacklist()">Guardar blacklist</button>
+            </div>
+          </div>
+
           <!-- Estado de las configuraciones -->
           <div class="config-section">
             <div class="config-section-header">
@@ -2921,21 +3456,61 @@
         <div id="simulatorPanel" class="simulator-panel">
           <div class="simulator-header">
             <h2>🧪 Simulador de Procesamiento</h2>
-            <p>Escribe un mensaje y procesa con IA para ver las cargas detectadas sin guardar en la base de datos</p>
+            <p>Probá mensajes de texto o imágenes con OCR + IA sin guardar en la base de datos</p>
           </div>
 
           <div class="simulator-content">
             <div class="simulator-input-section">
-              <div class="form-group">
-                <label>Mensaje a procesar:</label>
-                <textarea 
-                  id="simulatorMessage" 
-                  class="simulator-textarea" 
-                  placeholder="Escribe aquí el mensaje que quieres procesar con IA..."
-                  rows="8"
-                ></textarea>
+              <div class="simulator-mode-tabs">
+                <button type="button" id="simulatorTabText" class="simulator-mode-tab active" onclick="setSimulatorMode('text')">
+                  📝 Texto
+                </button>
+                <button type="button" id="simulatorTabImage" class="simulator-mode-tab" onclick="setSimulatorMode('image')">
+                  🖼️ Imagen
+                </button>
               </div>
-              <div class="form-group">
+
+              <!-- Modo texto -->
+              <div id="simulatorTextMode">
+                <div class="form-group">
+                  <label>Mensaje a procesar:</label>
+                  <textarea 
+                    id="simulatorMessage" 
+                    class="simulator-textarea" 
+                    placeholder="Escribe aquí el mensaje que quieres procesar con IA..."
+                    rows="8"
+                  ></textarea>
+                </div>
+                <button class="btn-primary simulator-process-btn" onclick="processSimulatorMessage()">
+                  🤖 Procesar con IA
+                </button>
+              </div>
+
+              <!-- Modo imagen -->
+              <div id="simulatorImageMode" style="display: none;">
+                <div class="form-group">
+                  <label>Imagen a procesar:</label>
+                  <input type="file" id="simulatorImageFile" class="simulator-file-input" accept="image/*" onchange="previewSimulatorImage(event)">
+                  <img id="simulatorImagePreview" class="simulator-image-preview" alt="Vista previa">
+                  <small style="color: #8696a0; display: block; margin-top: 8px;">
+                    Requiere configuración OCR activa en Configuración IA → OCR / Visión
+                  </small>
+                </div>
+                <div class="form-group">
+                  <label>Caption / texto adicional (opcional):</label>
+                  <textarea 
+                    id="simulatorImageCaption" 
+                    class="simulator-textarea" 
+                    placeholder="Texto que acompaña la imagen en WhatsApp (opcional)..."
+                    rows="3"
+                  ></textarea>
+                </div>
+                <button class="btn-primary simulator-process-btn" onclick="processSimulatorImage()">
+                  👁️ OCR + Procesar con IA
+                </button>
+              </div>
+
+              <div class="form-group" style="margin-top: 20px;">
                 <label>Teléfono Real (opcional):</label>
                 <input 
                   type="tel" 
@@ -2945,13 +3520,11 @@
                 />
                 <small style="color: #8696a0;">Si no se especifica, se usará un teléfono por defecto</small>
               </div>
-              <button class="btn-primary simulator-process-btn" onclick="processSimulatorMessage()">
-                🤖 Procesar con IA
-              </button>
             </div>
 
             <div id="simulatorResults" class="simulator-results" style="display: none;">
               <h3>📋 Resultados del Procesamiento</h3>
+              <div id="simulatorOcrSection"></div>
               <div id="simulatorStatus" class="simulator-status"></div>
               <div id="simulatorCargas" class="simulator-cargas"></div>
               <div id="simulatorRawJson" class="simulator-raw-json"></div>
@@ -3009,9 +3582,59 @@
       </div>
     </div>
 
+    <!-- Modal para agregar configuración OCR -->
+    <div id="addOCRConfigModal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>➕ Agregar Configuración OCR</h3>
+          <button class="modal-close" onclick="closeAddOCRConfigModal()">✖</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Proveedor:</label>
+            <select id="ocrModalProvider" onchange="onOCRProviderChange()">
+              <option value="">Selecciona un proveedor...</option>
+            </select>
+            <small id="ocrProviderHint" style="color: #8696a0; display: none; margin-top: 6px;"></small>
+          </div>
+          <div class="form-group" id="ocrCustomModelCheckboxGroup">
+            <label>
+              <input type="checkbox" id="ocrCustomModelCheckbox" onchange="toggleOCRCustomModel()" style="margin-right: 8px;">
+              Usar modelo personalizado
+            </label>
+          </div>
+          <div class="form-group" id="ocrModelSelectGroup">
+            <label id="ocrModelSelectLabel">Modelo con visión:</label>
+            <select id="ocrModalModel">
+              <option value="">Primero selecciona un proveedor...</option>
+            </select>
+          </div>
+          <div class="form-group" id="ocrCustomModelGroup" style="display: none;">
+            <label>Nombre del modelo personalizado:</label>
+            <input type="text" id="ocrModalCustomModel" placeholder="Ej: gemini-2.0-flash-exp">
+            <small>Solo modelos con soporte de imágenes (visión)</small>
+          </div>
+          <div class="form-group">
+            <label>API Key:</label>
+            <input type="password" id="ocrModalApiKey" placeholder="Ingresa tu API Key">
+          </div>
+          <div class="form-group">
+            <label>Nombre descriptivo:</label>
+            <input type="text" id="ocrModalConfigName" placeholder="Ej: Key OCR Gemini">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" onclick="closeAddOCRConfigModal()">Cancelar</button>
+          <button class="btn-primary" onclick="saveNewOCRConfig()">Guardar</button>
+        </div>
+      </div>
+    </div>
+
     <script src="wails/runtime/runtime.js"></script>
     <script>
       let currentChatJID = null;
+      let allChatsCache = [];
+      let currentChatSearchQuery = "";
       let associationsData = [];
       let currentFilter = "all";
       let searchTerm = "";
@@ -3026,6 +3649,8 @@
       let providersData = [];
       let modelsData = [];
       let configsData = [];
+      let ocrConfigsData = [];
+      let ocrProvidersData = [];
       let currentSecondaryConfigID = null; // ID de la configuración actual para configurar IA secundaria
       
       // Variables para vistas de procesamiento
@@ -3039,6 +3664,7 @@
         document.getElementById("messagesPanel").classList.remove("active");
         document.getElementById("associationsPanel").classList.remove("active");
         document.getElementById("processingPanel").classList.remove("active");
+        document.getElementById("imagesPanel").classList.remove("active");
         document.getElementById("aiConfigPanel").classList.remove("active");
         document.getElementById("settingsPanel").classList.remove("active");
         document.getElementById("simulatorPanel").classList.remove("active");
@@ -3069,6 +3695,13 @@
             .classList.add("active");
           console.log("Panel de procesamiento IA activado");
           refreshUnprocessedMessages();
+        } else if (tabName === "images") {
+          document.getElementById("imagesPanel").classList.add("active");
+          document
+            .querySelector(".tab[onclick=\"showTab('images')\"]")
+            .classList.add("active");
+          console.log("Panel de galería de imágenes activado");
+          loadImageGallery();
         } else if (tabName === "aiconfig") {
           document.getElementById("aiConfigPanel").classList.add("active");
           document
@@ -3083,6 +3716,8 @@
             .classList.add("active");
           console.log("Panel de configuraciones del sistema activado");
           loadSystemSettings();
+          loadDevAgentConfig();
+          loadMessageBlacklist();
         } else if (tabName === "simulator") {
           document.getElementById("simulatorPanel").classList.add("active");
           document
@@ -3090,6 +3725,298 @@
             .classList.add("active");
           console.log("Panel de simulador activado");
         }
+      }
+
+      // ===== GALERÍA DE IMÁGENES =====
+      let currentImagesFilter = "pending";
+      let currentPreviewMessage = null;
+      let currentGalleryMessages = [];
+
+      function setImagesFilter(filter) {
+        currentImagesFilter = filter;
+        document.querySelectorAll(".images-filter-btn").forEach((btn) => {
+          btn.classList.toggle("active", btn.dataset.filter === filter);
+        });
+        loadImageGallery();
+      }
+
+      function updateImagesBulkActions(count) {
+        const btn = document.getElementById("deleteAllPendingImagesBtn");
+        if (btn) {
+          btn.style.display = currentImagesFilter === "pending" && count > 0 ? "inline-block" : "none";
+        }
+      }
+
+      async function loadImageGallery() {
+        const grid = document.getElementById("imagesGalleryGrid");
+        grid.innerHTML = '<div class="empty-state"><p>Cargando imágenes...</p></div>';
+        updateImagesBulkActions(0);
+
+        try {
+          const messages = await window.go.main.App.GetImageMessages(currentImagesFilter, 100);
+          currentGalleryMessages = messages || [];
+
+          if (!messages || messages.length === 0) {
+            currentGalleryMessages = [];
+            grid.innerHTML = '<div class="empty-state"><h3>Sin imágenes</h3><p>No hay mensajes con imágenes en este filtro</p></div>';
+            updateImagesBulkActions(0);
+            return;
+          }
+
+          grid.innerHTML = "";
+          for (const msg of messages) {
+            grid.appendChild(createImageCard(msg));
+          }
+          updateImagesBulkActions(messages.length);
+        } catch (error) {
+          console.error("Error loading image gallery:", error);
+          currentGalleryMessages = [];
+          grid.innerHTML = `<div class="empty-state"><p>Error al cargar: ${escapeHtml(error.message || error)}</p></div>`;
+          updateImagesBulkActions(0);
+        }
+      }
+
+      async function deleteAllPendingImages() {
+        const visible = currentGalleryMessages.filter((m) => !m.processed);
+        if (visible.length === 0) {
+          showNotification("No hay imágenes pendientes visibles para eliminar", "warning");
+          return;
+        }
+
+        if (!confirm(`¿Eliminar ${visible.length} imagen(es) mostradas en pantalla? Se borrarán los mensajes y archivos locales.`)) {
+          return;
+        }
+
+        const refs = visible.map((m) => ({ id: m.id, chat_jid: m.chat_jid }));
+
+        try {
+          let count = 0;
+          if (window.go?.main?.App?.DeleteImageMessages) {
+            count = await window.go.main.App.DeleteImageMessages(refs);
+          } else {
+            for (const ref of refs) {
+              await window.go.main.App.DeleteMessage(ref.id, ref.chat_jid);
+              count++;
+            }
+          }
+          showNotification(`Eliminadas ${count} imagen(es)`, count > 0 ? "success" : "warning");
+          loadImageGallery();
+        } catch (error) {
+          console.error("Error eliminando imágenes pendientes:", error);
+          showNotification("Error al eliminar: " + (error.message || error), "error");
+        }
+      }
+
+      function createImageCard(msg) {
+        const card = document.createElement("div");
+        card.className = "image-card";
+        card.dataset.messageId = msg.id;
+        card.dataset.chatJid = msg.chat_jid;
+
+        const thumb = document.createElement("div");
+        thumb.className = "image-card-thumb loading";
+        thumb.textContent = "Cargando...";
+        thumb.onclick = () => openImagePreview(msg);
+        card.appendChild(thumb);
+
+        loadThumbnail(msg.id, msg.chat_jid, thumb);
+
+        const body = document.createElement("div");
+        body.className = "image-card-body";
+
+        const date = new Date(msg.timestamp);
+        const badgeClass = msg.processed ? "processed" : "pending";
+        const badgeText = msg.processed ? "Procesada" : "Pendiente";
+
+        body.innerHTML = `
+          <span class="image-card-badge ${badgeClass}">${badgeText}</span>
+          ${msg.duplicate_count > 1 ? `<span class="image-card-badge processed" title="Misma imagen en ${msg.duplicate_count} chats">🔗 ×${msg.duplicate_count}</span>` : ""}
+          <div class="image-card-meta">${escapeHtml(msg.chat_name || msg.chat_jid)} · ${formatDateTime(date)}</div>
+          <div class="image-card-meta">${escapeHtml(msg.sender_name || msg.sender_phone || "Desconocido")}</div>
+          ${msg.content ? `<div class="image-card-caption" title="${escapeHtml(msg.content)}">${escapeHtml(msg.content)}</div>` : ""}
+        `;
+
+        const actions = document.createElement("div");
+        actions.className = "image-card-actions";
+
+        const viewBtn = document.createElement("button");
+        viewBtn.className = "btn-secondary";
+        viewBtn.textContent = "👁 Ver";
+        viewBtn.onclick = () => openImagePreview(msg);
+        actions.appendChild(viewBtn);
+
+        if (!msg.processed) {
+          const processBtn = document.createElement("button");
+          processBtn.className = "btn-primary";
+          processBtn.textContent = "🤖";
+          processBtn.title = "Procesar con IA";
+          processBtn.onclick = () => processGalleryImage(msg.id, msg.chat_jid);
+          actions.appendChild(processBtn);
+
+          const discardBtn = document.createElement("button");
+          discardBtn.className = "btn-secondary";
+          discardBtn.textContent = "⏭️";
+          discardBtn.title = "Descartar";
+          discardBtn.onclick = () => discardGalleryImage(msg.id, msg.chat_jid);
+          actions.appendChild(discardBtn);
+        }
+
+        const deleteBtn = document.createElement("button");
+        deleteBtn.className = "btn-danger";
+        deleteBtn.textContent = "🗑️";
+        deleteBtn.title = "Eliminar";
+        deleteBtn.onclick = () => deleteGalleryImage(msg.id, msg.chat_jid);
+        actions.appendChild(deleteBtn);
+
+        body.appendChild(actions);
+        card.appendChild(body);
+        return card;
+      }
+
+      async function loadThumbnail(messageID, chatJID, container) {
+        try {
+          const preview = await window.go.main.App.GetMessageImagePreview(messageID, chatJID);
+          if (preview.success && preview.data_url) {
+            const img = document.createElement("img");
+            img.className = "image-card-thumb";
+            img.src = preview.data_url;
+            img.alt = "Imagen";
+            img.onclick = container.onclick;
+            container.replaceWith(img);
+          } else {
+            container.textContent = preview.error || "Sin imagen";
+          }
+        } catch (error) {
+          container.textContent = "Error al cargar";
+          console.error("Thumbnail error:", error);
+        }
+      }
+
+      async function loadMessageImageThumb(messageID, chatJID, messageDiv) {
+        const mediaDiv = messageDiv.querySelector(".message-media[data-image-msg]");
+        if (!mediaDiv) return;
+
+        try {
+          const preview = await window.go.main.App.GetMessageImagePreview(messageID, chatJID);
+          const loading = mediaDiv.querySelector(".message-image-loading");
+          if (loading) loading.remove();
+
+          if (preview.success && preview.data_url) {
+            const img = document.createElement("img");
+            img.className = "message-image-thumb";
+            img.src = preview.data_url;
+            img.alt = "Imagen";
+            img.onclick = () => {
+              openImagePreview({
+                id: messageID,
+                chat_jid: chatJID,
+                timestamp: Date.now(),
+                processed: true,
+              });
+            };
+            mediaDiv.appendChild(img);
+          } else {
+            mediaDiv.innerHTML += `<span style="color:#8696a0;font-size:12px;">${escapeHtml(preview.error || "Sin vista previa")}</span>`;
+          }
+        } catch (error) {
+          const loading = mediaDiv.querySelector(".message-image-loading");
+          if (loading) loading.textContent = "No disponible";
+        }
+      }
+
+      async function openImagePreview(msg) {
+        currentPreviewMessage = msg;
+        const modal = document.getElementById("imagePreviewModal");
+        const img = document.getElementById("imagePreviewFull");
+        const meta = document.getElementById("imagePreviewMeta");
+        const caption = document.getElementById("imagePreviewCaption");
+
+        img.src = "";
+        meta.textContent = "Cargando...";
+        caption.textContent = "";
+        modal.classList.add("show");
+
+        try {
+          const preview = await window.go.main.App.GetMessageImagePreview(msg.id, msg.chat_jid);
+          if (preview.success && preview.data_url) {
+            img.src = preview.data_url;
+          } else {
+            meta.textContent = preview.error || "No se pudo cargar la imagen";
+            return;
+          }
+        } catch (error) {
+          meta.textContent = "Error: " + (error.message || error);
+          return;
+        }
+
+        const date = new Date(msg.timestamp);
+        meta.innerHTML = `<strong>${escapeHtml(msg.chat_name || msg.chat_jid)}</strong><br>
+          ${escapeHtml(msg.sender_name || msg.sender_phone || "")} · ${formatDateTime(date)}
+          ${msg.real_phone ? `<br>Tel. real: +${escapeHtml(msg.real_phone)}` : ""}`;
+        caption.textContent = msg.content || msg.extracted_text || "";
+
+        document.getElementById("imagePreviewProcessBtn").style.display = msg.processed ? "none" : "inline-block";
+        document.getElementById("imagePreviewDiscardBtn").style.display = msg.processed ? "none" : "inline-block";
+
+        document.getElementById("imagePreviewProcessBtn").onclick = () => {
+          closeImagePreview();
+          processGalleryImage(msg.id, msg.chat_jid);
+        };
+        document.getElementById("imagePreviewDiscardBtn").onclick = () => {
+          closeImagePreview();
+          discardGalleryImage(msg.id, msg.chat_jid);
+        };
+        document.getElementById("imagePreviewDeleteBtn").onclick = () => {
+          closeImagePreview();
+          deleteGalleryImage(msg.id, msg.chat_jid);
+        };
+      }
+
+      function closeImagePreview(event) {
+        if (event && event.target !== event.currentTarget) return;
+        document.getElementById("imagePreviewModal").classList.remove("show");
+        document.getElementById("imagePreviewFull").src = "";
+        currentPreviewMessage = null;
+      }
+
+      async function processGalleryImage(messageID, chatJID) {
+        if (!confirm("¿Procesar esta imagen con OCR e IA?")) return;
+        try {
+          await processSingleMessage(messageID, chatJID);
+          loadImageGallery();
+        } catch (error) {
+          alert("Error al procesar: " + (error.message || error));
+        }
+      }
+
+      async function discardGalleryImage(messageID, chatJID) {
+        if (!confirm("¿Descartar esta imagen? No se procesará con IA.")) return;
+        try {
+          await window.go.main.App.DiscardImageMessage(messageID, chatJID);
+          loadImageGallery();
+        } catch (error) {
+          alert("Error al descartar: " + (error.message || error));
+        }
+      }
+
+      async function deleteGalleryImage(messageID, chatJID) {
+        if (!confirm("¿Eliminar permanentemente este mensaje e imagen?")) return;
+        try {
+          await window.go.main.App.DeleteMessage(messageID, chatJID);
+          loadImageGallery();
+        } catch (error) {
+          alert("Error al eliminar: " + (error.message || error));
+        }
+      }
+
+      function formatDateTime(date) {
+        return date.toLocaleString("es-AR", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
       }
 
       // ===== FUNCIONES PARA ASOCIACIONES =====
@@ -3463,58 +4390,109 @@
       async function loadMessagesForSender(senderPhone) {
         const messagesContent = document.getElementById(`messagesContent_${senderPhone}`);
         if (!messagesContent) return;
-        
+
         try {
           messagesContent.innerHTML = '<div style="text-align: center; color: #8696a0; padding: 20px;">Cargando mensajes...</div>';
-          
+
           const messages = await window.go.main.App.GetMessagesBySenderPhone(senderPhone, 20);
-          
+
           if (!messages || messages.length === 0) {
             messagesContent.innerHTML = '<div style="text-align: center; color: #8696a0; padding: 20px;">No hay mensajes disponibles</div>';
             return;
           }
-          
-          let html = '<div style="display: flex; flex-direction: column; gap: 10px;">';
-          
-          messages.forEach((msg) => {
+
+          const list = document.createElement("div");
+          list.style.cssText = "display: flex; flex-direction: column; gap: 10px;";
+
+          for (const msg of messages) {
             const date = new Date(msg.timestamp);
-            const dateStr = date.toLocaleString('es-AR', {
-              year: 'numeric',
-              month: '2-digit',
-              day: '2-digit',
-              hour: '2-digit',
-              minute: '2-digit'
+            const dateStr = date.toLocaleString("es-AR", {
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
             });
-            
-            // Truncar contenido si es muy largo
-            let content = msg.content || "(Sin contenido)";
-            if (content.length > 300) {
-              content = content.substring(0, 300) + "...";
+
+            const item = document.createElement("div");
+            item.className = "message-preview-item";
+
+            const contentDiv = document.createElement("div");
+            contentDiv.className = "message-preview-content";
+
+            if (msg.media_type === "image") {
+              if (msg.content) {
+                const text = msg.content.length > 300 ? msg.content.substring(0, 300) + "..." : msg.content;
+                const caption = document.createElement("div");
+                caption.textContent = text;
+                contentDiv.appendChild(caption);
+              } else {
+                const imgLabel = document.createElement("div");
+                imgLabel.textContent = "🖼️ Imagen";
+                contentDiv.appendChild(imgLabel);
+              }
+
+              const mediaDiv = document.createElement("div");
+              mediaDiv.className = "message-media";
+              mediaDiv.dataset.imageMsg = msg.id;
+              mediaDiv.dataset.imageChat = msg.chat_jid;
+              mediaDiv.innerHTML = `<div class="message-image-loading" style="color:#8696a0;font-size:12px;margin-top:4px;">Cargando vista previa...</div>`;
+
+              const meta = document.createElement("div");
+              meta.className = "message-preview-meta";
+              meta.textContent = `📅 ${dateStr} | 💬 ${msg.chat_jid || "Sin chat"}`;
+
+              contentDiv.appendChild(mediaDiv);
+              contentDiv.appendChild(meta);
+
+              const actions = document.createElement("div");
+              actions.className = "message-preview-actions";
+              const deleteBtn = document.createElement("button");
+              deleteBtn.className = "delete-message-btn";
+              deleteBtn.title = "Eliminar mensaje y descartar asociación";
+              deleteBtn.textContent = "🗑️ Eliminar";
+              deleteBtn.onclick = () => deleteMessageAndAssociation(msg.id, msg.chat_jid, senderPhone);
+              actions.appendChild(deleteBtn);
+
+              item.appendChild(contentDiv);
+              item.appendChild(actions);
+              list.appendChild(item);
+
+              loadMessageImageThumb(msg.id, msg.chat_jid, item);
+              continue;
             }
-            
-            html += `
-              <div class="message-preview-item">
-                <div class="message-preview-content">
-                  <div>${escapeHtml(content)}</div>
-                  <div class="message-preview-meta">
-                    📅 ${dateStr} | 💬 ${msg.chat_jid || "Sin chat"}
-                  </div>
-                </div>
-                <div class="message-preview-actions">
-                  <button class="delete-message-btn" onclick="deleteMessageAndAssociation('${msg.id}', '${msg.chat_jid}', '${senderPhone}')" title="Eliminar mensaje y descartar asociación">
-                    🗑️ Eliminar
-                  </button>
-                </div>
-              </div>
+
+            let text = msg.content || "";
+            if (!text && msg.media_type) {
+              text = `📎 ${msg.media_type}${msg.filename ? ": " + msg.filename : ""}`;
+            }
+            if (!text) text = "(Sin contenido)";
+            if (text.length > 300) text = text.substring(0, 300) + "...";
+
+            contentDiv.innerHTML = `
+              <div>${escapeHtml(text)}</div>
+              <div class="message-preview-meta">📅 ${dateStr} | 💬 ${escapeHtml(msg.chat_jid || "Sin chat")}</div>
             `;
-          });
-          
-          html += '</div>';
-          messagesContent.innerHTML = html;
-          
+
+            const actions = document.createElement("div");
+            actions.className = "message-preview-actions";
+            const deleteBtn = document.createElement("button");
+            deleteBtn.className = "delete-message-btn";
+            deleteBtn.title = "Eliminar mensaje y descartar asociación";
+            deleteBtn.textContent = "🗑️ Eliminar";
+            deleteBtn.onclick = () => deleteMessageAndAssociation(msg.id, msg.chat_jid, senderPhone);
+            actions.appendChild(deleteBtn);
+
+            item.appendChild(contentDiv);
+            item.appendChild(actions);
+            list.appendChild(item);
+          }
+
+          messagesContent.innerHTML = "";
+          messagesContent.appendChild(list);
         } catch (error) {
           console.error("Error loading messages:", error);
-          messagesContent.innerHTML = `<div style="text-align: center; color: #dc3545; padding: 20px;">Error al cargar mensajes: ${error.message}</div>`;
+          messagesContent.innerHTML = `<div style="text-align: center; color: #dc3545; padding: 20px;">Error al cargar mensajes: ${escapeHtml(error.message || String(error))}</div>`;
         }
       }
 
@@ -3631,128 +4609,202 @@
         }
       }
 
-      async function processSimulatorMessage() {
-        const messageText = document.getElementById("simulatorMessage").value.trim();
-        const phoneNumber = document.getElementById("simulatorPhone").value.trim();
-        
-        if (!messageText) {
-          showNotification("Por favor ingresa un mensaje para procesar", "error");
+      // Variables del simulador
+      let simulatorImageBase64 = null;
+
+      function setSimulatorMode(mode) {
+        const isText = mode === 'text';
+        document.getElementById('simulatorTextMode').style.display = isText ? 'block' : 'none';
+        document.getElementById('simulatorImageMode').style.display = isText ? 'none' : 'block';
+        document.getElementById('simulatorTabText').classList.toggle('active', isText);
+        document.getElementById('simulatorTabImage').classList.toggle('active', !isText);
+      }
+
+      function previewSimulatorImage(event) {
+        const file = event.target.files[0];
+        const preview = document.getElementById('simulatorImagePreview');
+        simulatorImageBase64 = null;
+
+        if (!file) {
+          preview.classList.remove('visible');
+          preview.src = '';
           return;
         }
-        
-        const resultsDiv = document.getElementById("simulatorResults");
-        const statusDiv = document.getElementById("simulatorStatus");
-        const cargasDiv = document.getElementById("simulatorCargas");
-        const rawJsonDiv = document.getElementById("simulatorRawJson");
-        
-        // Mostrar loading
-        resultsDiv.style.display = "block";
-        statusDiv.innerHTML = '<div style="color: #8696a0;">⏳ Procesando mensaje con IA...</div>';
-        cargasDiv.innerHTML = "";
-        rawJsonDiv.innerHTML = "";
-        
-        try {
-          const result = await window.go.main.App.SimulateMessage(messageText, phoneNumber || "");
-          
-          // Mostrar estado
-          if (result.status === "success") {
-            statusDiv.className = "simulator-status success";
-            statusDiv.innerHTML = `
-              <div style="font-weight: 600; margin-bottom: 5px;">✅ ${result.error_message || "Procesamiento exitoso"}</div>
-              <div style="font-size: 12px; color: #8696a0;">Estado: ${result.status}</div>
-            `;
-            
-            // Parsear respuesta JSON
-            let cargas = [];
-            try {
-              cargas = JSON.parse(result.ai_response || "[]");
-            } catch (e) {
-              console.error("Error parseando JSON:", e);
-              cargas = [];
-            }
-            
-            // Mostrar cargas
-            if (cargas.length > 0) {
-              let cargasHtml = `<h4 style="color: #e9edef; margin-bottom: 15px;">📦 Cargas Detectadas (${cargas.length})</h4>`;
-              
-              cargas.forEach((carga, index) => {
-                cargasHtml += `
-                  <div class="carga-card">
-                    <h4>Carga ${index + 1}</h4>
-                    <div class="carga-field">
-                      <span class="carga-field-label">Material:</span>
-                      <span class="carga-field-value">${carga.material || "N/A"}</span>
-                    </div>
-                    <div class="carga-field">
-                      <span class="carga-field-label">Cantidad:</span>
-                      <span class="carga-field-value">${carga.cantidad || "N/A"}</span>
-                    </div>
-                    <div class="carga-field">
-                      <span class="carga-field-label">Presentación:</span>
-                      <span class="carga-field-value">${carga.presentacion || "N/A"}</span>
-                    </div>
-                    <div class="carga-field">
-                      <span class="carga-field-label">Origen:</span>
-                      <span class="carga-field-value">${carga.localidadCarga || "N/A"}</span>
-                    </div>
-                    <div class="carga-field">
-                      <span class="carga-field-label">Destino:</span>
-                      <span class="carga-field-value">${carga.localidadDescarga || "N/A"}</span>
-                    </div>
-                    <div class="carga-field">
-                      <span class="carga-field-label">Fecha Carga:</span>
-                      <span class="carga-field-value">${carga.fechaCarga || "N/A"}</span>
-                    </div>
-                    <div class="carga-field">
-                      <span class="carga-field-label">Fecha Descarga:</span>
-                      <span class="carga-field-value">${carga.fechaDescarga || "N/A"}</span>
-                    </div>
-                    <div class="carga-field">
-                      <span class="carga-field-label">Equipo:</span>
-                      <span class="carga-field-value">${carga.equipo || "N/A"}</span>
-                    </div>
-                    <div class="carga-field">
-                      <span class="carga-field-label">Observaciones:</span>
-                      <span class="carga-field-value">${carga.observaciones || "N/A"}</span>
-                    </div>
-                  </div>
-                `;
-              });
-              
-              cargasDiv.innerHTML = cargasHtml;
-            } else {
-              cargasDiv.innerHTML = '<div style="color: #8696a0; padding: 20px; text-align: center;">No se detectaron cargas en el mensaje</div>';
-            }
-            
-            // Mostrar JSON raw
-            rawJsonDiv.innerHTML = `
-              <h4>📄 Respuesta JSON Completa</h4>
-              <pre>${JSON.stringify(cargas, null, 2)}</pre>
-            `;
-            
-          } else {
-            statusDiv.className = "simulator-status error";
-            statusDiv.innerHTML = `
-              <div style="font-weight: 600; margin-bottom: 5px;">❌ Error en el procesamiento</div>
-              <div style="font-size: 12px; color: #f15c6d; margin-top: 5px;">${result.error_message || "Error desconocido"}</div>
-            `;
-            
-            if (result.ai_response) {
-              rawJsonDiv.innerHTML = `
-                <h4>📄 Respuesta de IA (con errores)</h4>
-                <pre>${result.ai_response}</pre>
-              `;
-            }
+
+        if (!file.type.startsWith('image/')) {
+          showNotification('Seleccioná un archivo de imagen válido', 'error');
+          event.target.value = '';
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          simulatorImageBase64 = e.target.result;
+          preview.src = simulatorImageBase64;
+          preview.classList.add('visible');
+        };
+        reader.readAsDataURL(file);
+      }
+
+      function renderSimulatorResults(result) {
+        const resultsDiv = document.getElementById('simulatorResults');
+        const ocrSection = document.getElementById('simulatorOcrSection');
+        const statusDiv = document.getElementById('simulatorStatus');
+        const cargasDiv = document.getElementById('simulatorCargas');
+        const rawJsonDiv = document.getElementById('simulatorRawJson');
+
+        resultsDiv.style.display = 'block';
+
+        if (result.is_from_image && result.extracted_text) {
+          ocrSection.innerHTML = `
+            <div class="simulator-ocr-text">
+              <strong style="color: #7c4dff;">👁️ Texto extraído por OCR:</strong><br><br>
+              ${escapeHtml(result.extracted_text)}
+            </div>
+          `;
+        } else if (result.is_from_image) {
+          ocrSection.innerHTML = `
+            <div class="simulator-ocr-text" style="color: #8696a0;">
+              👁️ OCR: no se extrajo texto de la imagen
+            </div>
+          `;
+        } else {
+          ocrSection.innerHTML = '';
+        }
+
+        if (result.status === 'success') {
+          statusDiv.className = 'simulator-status success';
+          statusDiv.innerHTML = `
+            <div style="font-weight: 600; margin-bottom: 5px;">✅ ${result.error_message || 'Procesamiento exitoso'}</div>
+            <div style="font-size: 12px; color: #8696a0;">Estado: ${result.status}${result.is_from_image ? ' · desde imagen' : ''}</div>
+          `;
+
+          let cargas = [];
+          try {
+            cargas = JSON.parse(result.ai_response || '[]');
+          } catch (e) {
+            console.error('Error parseando JSON:', e);
           }
-          
+
+          if (cargas.length > 0) {
+            let cargasHtml = `<h4 style="color: #e9edef; margin-bottom: 15px;">📦 Cargas Detectadas (${cargas.length})</h4>`;
+            cargas.forEach((carga, index) => {
+              cargasHtml += `
+                <div class="carga-card">
+                  <h4>Carga ${index + 1}</h4>
+                  <div class="carga-field"><span class="carga-field-label">Material:</span><span class="carga-field-value">${carga.material || 'N/A'}</span></div>
+                  <div class="carga-field"><span class="carga-field-label">Cantidad:</span><span class="carga-field-value">${carga.cantidad || 'N/A'}</span></div>
+                  <div class="carga-field"><span class="carga-field-label">Presentación:</span><span class="carga-field-value">${carga.presentacion || 'N/A'}</span></div>
+                  <div class="carga-field"><span class="carga-field-label">Origen:</span><span class="carga-field-value">${carga.localidadCarga || 'N/A'}</span></div>
+                  <div class="carga-field"><span class="carga-field-label">Destino:</span><span class="carga-field-value">${carga.localidadDescarga || 'N/A'}</span></div>
+                  <div class="carga-field"><span class="carga-field-label">Fecha Carga:</span><span class="carga-field-value">${carga.fechaCarga || 'N/A'}</span></div>
+                  <div class="carga-field"><span class="carga-field-label">Fecha Descarga:</span><span class="carga-field-value">${carga.fechaDescarga || 'N/A'}</span></div>
+                  <div class="carga-field"><span class="carga-field-label">Equipo:</span><span class="carga-field-value">${carga.equipo || 'N/A'}</span></div>
+                  <div class="carga-field"><span class="carga-field-label">Observaciones:</span><span class="carga-field-value">${carga.observaciones || 'N/A'}</span></div>
+                </div>
+              `;
+            });
+            cargasDiv.innerHTML = cargasHtml;
+          } else {
+            cargasDiv.innerHTML = '<div style="color: #8696a0; padding: 20px; text-align: center;">No se detectaron cargas en el mensaje</div>';
+          }
+
+          rawJsonDiv.innerHTML = `
+            <h4>📄 Respuesta JSON Completa</h4>
+            <pre>${JSON.stringify(cargas, null, 2)}</pre>
+          `;
+        } else {
+          statusDiv.className = 'simulator-status error';
+          statusDiv.innerHTML = `
+            <div style="font-weight: 600; margin-bottom: 5px;">❌ Error en el procesamiento</div>
+            <div style="font-size: 12px; color: #f15c6d; margin-top: 5px;">${result.error_message || 'Error desconocido'}</div>
+          `;
+          cargasDiv.innerHTML = '';
+
+          if (result.ai_response) {
+            rawJsonDiv.innerHTML = `
+              <h4>📄 Respuesta de IA (con errores)</h4>
+              <pre>${result.ai_response}</pre>
+            `;
+          } else {
+            rawJsonDiv.innerHTML = '';
+          }
+        }
+      }
+
+      function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
+
+      async function processSimulatorMessage() {
+        const messageText = document.getElementById('simulatorMessage').value.trim();
+        const phoneNumber = document.getElementById('simulatorPhone').value.trim();
+
+        if (!messageText) {
+          showNotification('Por favor ingresa un mensaje para procesar', 'error');
+          return;
+        }
+
+        const resultsDiv = document.getElementById('simulatorResults');
+        const statusDiv = document.getElementById('simulatorStatus');
+        const cargasDiv = document.getElementById('simulatorCargas');
+        const rawJsonDiv = document.getElementById('simulatorRawJson');
+        const ocrSection = document.getElementById('simulatorOcrSection');
+
+        resultsDiv.style.display = 'block';
+        ocrSection.innerHTML = '';
+        statusDiv.innerHTML = '<div style="color: #8696a0;">⏳ Procesando mensaje con IA...</div>';
+        cargasDiv.innerHTML = '';
+        rawJsonDiv.innerHTML = '';
+
+        try {
+          const result = await window.go.main.App.SimulateMessage(messageText, phoneNumber || '');
+          renderSimulatorResults(result);
         } catch (error) {
-          console.error("Error procesando mensaje:", error);
-          statusDiv.className = "simulator-status error";
+          console.error('Error procesando mensaje:', error);
+          statusDiv.className = 'simulator-status error';
           statusDiv.innerHTML = `
             <div style="font-weight: 600; margin-bottom: 5px;">❌ Error</div>
-            <div style="font-size: 12px; color: #f15c6d; margin-top: 5px;">${error.message || "Error desconocido"}</div>
+            <div style="font-size: 12px; color: #f15c6d; margin-top: 5px;">${error.message || 'Error desconocido'}</div>
           `;
-          showNotification("Error al procesar mensaje: " + error.message, "error");
+          showNotification('Error al procesar mensaje: ' + error.message, 'error');
+        }
+      }
+
+      async function processSimulatorImage() {
+        const caption = document.getElementById('simulatorImageCaption').value.trim();
+        const phoneNumber = document.getElementById('simulatorPhone').value.trim();
+
+        if (!simulatorImageBase64) {
+          showNotification('Seleccioná una imagen para procesar', 'error');
+          return;
+        }
+
+        const resultsDiv = document.getElementById('simulatorResults');
+        const statusDiv = document.getElementById('simulatorStatus');
+        const cargasDiv = document.getElementById('simulatorCargas');
+        const rawJsonDiv = document.getElementById('simulatorRawJson');
+        const ocrSection = document.getElementById('simulatorOcrSection');
+
+        resultsDiv.style.display = 'block';
+        ocrSection.innerHTML = '';
+        statusDiv.innerHTML = '<div style="color: #8696a0;">⏳ Extrayendo texto con OCR y procesando con IA...</div>';
+        cargasDiv.innerHTML = '';
+        rawJsonDiv.innerHTML = '';
+
+        try {
+          const result = await window.go.main.App.SimulateImageMessage(simulatorImageBase64, caption, phoneNumber || '');
+          renderSimulatorResults(result);
+        } catch (error) {
+          console.error('Error procesando imagen:', error);
+          statusDiv.className = 'simulator-status error';
+          statusDiv.innerHTML = `
+            <div style="font-weight: 600; margin-bottom: 5px;">❌ Error</div>
+            <div style="font-size: 12px; color: #f15c6d; margin-top: 5px;">${error.message || 'Error desconocido'}</div>
+          `;
+          showNotification('Error al procesar imagen: ' + error.message, 'error');
         }
       }
 
@@ -3816,7 +4868,7 @@
         console.log("Nuevo mensaje:", message);
         refreshChats();
         if (currentChatJID === message.chat_jid) {
-          loadMessages(currentChatJID);
+          loadMessages(currentChatJID, currentChatSearchQuery);
         }
       });
 
@@ -3954,113 +5006,237 @@
       async function refreshChats() {
         try {
           const chats = await window.go.main.App.GetChats();
-          const chatsList = document.getElementById("chatsList");
-
-          if (!chats || chats.length === 0) {
-            chatsList.innerHTML = `
-                        <div class="empty-state">
-                            <h3>No hay chats</h3>
-                            <p>Los mensajes aparecerán aquí</p>
-                        </div>
-                    `;
-            return;
-          }
-
-          chatsList.innerHTML = "";
-          chats.forEach((chat) => {
-            const chatItem = document.createElement("div");
-            chatItem.className = "chat-item";
-            chatItem.onclick = () => selectChat(chat.jid, chat.name);
-
-            const time = new Date(chat.last_message_time);
-            const timeStr = formatTime(time);
-
-            chatItem.innerHTML = `
-                        <div class="chat-time">${timeStr}</div>
-                        <div class="chat-name">${chat.name}</div>
-                        <div class="chat-last-message">Toca para ver mensajes</div>
-                    `;
-
-            chatsList.appendChild(chatItem);
-          });
+          allChatsCache = chats || [];
+          renderChatsList(allChatsCache);
         } catch (err) {
           console.error("Error refreshing chats:", err);
         }
       }
 
-      async function selectChat(jid, name) {
+      function filterChatsList() {
+        const term = (document.getElementById("chatsSearch")?.value || "").trim().toLowerCase();
+        if (!term) {
+          renderChatsList(allChatsCache);
+          return;
+        }
+        const filtered = allChatsCache.filter((chat) => {
+          const name = (chat.name || "").toLowerCase();
+          const jid = (chat.jid || "").toLowerCase();
+          return name.includes(term) || jid.includes(term);
+        });
+        renderChatsList(filtered);
+      }
+
+      function renderChatsList(chats) {
+        const chatsList = document.getElementById("chatsList");
+        if (!chats || chats.length === 0) {
+          chatsList.innerHTML = `
+                        <div class="empty-state">
+                            <h3>No hay chats</h3>
+                            <p>${allChatsCache.length ? "Sin resultados para la búsqueda" : "Los mensajes aparecerán aquí"}</p>
+                        </div>
+                    `;
+          return;
+        }
+
+        chatsList.innerHTML = "";
+        chats.forEach((chat) => {
+          const chatItem = document.createElement("div");
+          chatItem.className = "chat-item";
+          if (currentChatJID && chat.jid === currentChatJID) {
+            chatItem.classList.add("active");
+          }
+          chatItem.onclick = () => selectChat(chat.jid, chat.name, chatItem);
+
+          const time = new Date(chat.last_message_time);
+          const timeStr = formatTime(time);
+          const isGroup = chat.jid && chat.jid.includes("@g.us");
+
+          chatItem.innerHTML = `
+                        <div class="chat-time">${timeStr}</div>
+                        <div class="chat-name">${escapeHtml(chat.name || "")}${isGroup ? " 👥" : ""}</div>
+                        <div class="chat-jid" title="${escapeHtml(chat.jid || "")}">${escapeHtml(chat.jid || "")}</div>
+                    `;
+
+          chatsList.appendChild(chatItem);
+        });
+      }
+
+      async function selectChat(jid, name, chatItemEl) {
         currentChatJID = jid;
+        currentChatSearchQuery = "";
         document.getElementById("chatTitle").textContent = name;
+        const jidEl = document.getElementById("chatHeaderJID");
+        const copyBtn = document.getElementById("copyChatJIDBtn");
+        const searchBox = document.getElementById("messagesSearchBox");
+        const searchInput = document.getElementById("chatMessagesSearch");
+        const searchMeta = document.getElementById("chatMessagesSearchMeta");
+        if (jidEl) jidEl.textContent = jid || "";
+        if (copyBtn) copyBtn.style.display = jid ? "inline-block" : "none";
+        if (searchBox) searchBox.classList.add("active");
+        if (searchInput) searchInput.value = "";
+        if (searchMeta) searchMeta.textContent = "";
         document.getElementById("messagesPanel").classList.add("active");
 
-        // Marcar chat activo
         document.querySelectorAll(".chat-item").forEach((item) => {
           item.classList.remove("active");
         });
-        event.currentTarget.classList.add("active");
+        if (chatItemEl) {
+          chatItemEl.classList.add("active");
+        }
 
         await loadMessages(jid);
       }
 
-      async function loadMessages(chatJID) {
+      async function copyCurrentChatJID() {
+        if (!currentChatJID) return;
         try {
-          const messages = await window.go.main.App.GetMessages(chatJID);
-          const container = document.getElementById("messagesContainer");
+          await navigator.clipboard.writeText(currentChatJID);
+          showNotification("✅ JID copiado al portapapeles", "success");
+        } catch (error) {
+          console.error("Error copiando JID:", error);
+          showNotification("❌ No se pudo copiar el JID", "error");
+        }
+      }
 
-          if (!messages || messages.length === 0) {
-            container.innerHTML = `
-                        <div class="empty-state">
-                            <h3>No hay mensajes</h3>
-                            <p>Inicia una conversación</p>
-                        </div>
-                    `;
-            return;
-          }
+      async function loadDevAgentGroupOptions() {
+        const select = document.getElementById("devAgentGroupSelect");
+        if (!select) return;
 
-          container.innerHTML = "";
-          messages.forEach((msg) => {
-            const messageDiv = document.createElement("div");
-            messageDiv.className = msg.is_from_me
-              ? "message outgoing"
-              : "message incoming";
+        try {
+          const chats = await window.go.main.App.GetChats();
+          const groups = (chats || []).filter(c => c.jid && c.jid.includes("@g.us"));
+          const currentJID = document.getElementById("devAgentGroupJID").value.trim();
 
-            let content = "";
-            if (!msg.is_from_me) {
-              // Mostrar nombre y teléfono/LID
-              let senderDisplay = msg.sender_name || msg.sender_phone;
-
-              // Si el phone parece un número real (no LID largo), mostrarlo
-              if (msg.sender_phone && msg.sender_phone.length <= 15) {
-                // Es un número de teléfono real
-                senderDisplay = `${msg.sender_name} (+${msg.sender_phone})`;
-              } else if (msg.sender_phone && msg.sender_phone.length > 15) {
-                // Es un LID - mostrar nombre + indicador de privacidad
-                senderDisplay = `${msg.sender_name} (🔒 LID: ${msg.sender_phone})`;
-              }
-
-              content += `<div class="message-sender">${senderDisplay}</div>`;
-            }
-            if (msg.content) {
-              content += `<div class="message-content">${escapeHtml(
-                msg.content
-              )}</div>`;
-            }
-            if (msg.media_type) {
-              content += `<div class="message-media">📎 ${msg.media_type}: ${msg.filename}</div>`;
-            }
-
-            const time = new Date(msg.timestamp);
-            const timeStr = formatTime(time);
-            content += `<div class="message-time">${timeStr}</div>`;
-
-            messageDiv.innerHTML = `<div class="message-bubble">${content}</div>`;
-            container.appendChild(messageDiv);
+          select.innerHTML = '<option value="">— Seleccionar grupo de la lista —</option>';
+          groups.forEach(group => {
+            const opt = document.createElement("option");
+            opt.value = group.jid;
+            opt.textContent = `${group.name} (${group.jid})`;
+            if (group.jid === currentJID) opt.selected = true;
+            select.appendChild(opt);
           });
+        } catch (error) {
+          console.error("Error cargando grupos:", error);
+        }
+      }
 
-          // Scroll al final
-          container.scrollTop = container.scrollHeight;
+      function selectDevAgentGroupFromList() {
+        const select = document.getElementById("devAgentGroupSelect");
+        const input = document.getElementById("devAgentGroupJID");
+        if (select && input && select.value) {
+          input.value = select.value;
+        }
+      }
+
+      async function loadMessages(chatJID, searchQuery = "") {
+        try {
+          let messages;
+          const query = (searchQuery || "").trim();
+          if (query) {
+            messages = await window.go.main.App.SearchMessagesInChat(chatJID, query);
+          } else {
+            messages = await window.go.main.App.GetMessages(chatJID);
+          }
+          renderChatMessages(messages, chatJID, query);
         } catch (err) {
           console.error("Error loading messages:", err);
+        }
+      }
+
+      function highlightSearchTerm(text, query) {
+        const safe = escapeHtml(text || "");
+        if (!query) return safe;
+        const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const re = new RegExp(`(${escapedQuery})`, "gi");
+        return safe.replace(re, '<mark class="message-search-hit">$1</mark>');
+      }
+
+      function renderChatMessages(messages, chatJID, query = "") {
+        const container = document.getElementById("messagesContainer");
+        const searchMeta = document.getElementById("chatMessagesSearchMeta");
+
+        if (!messages || messages.length === 0) {
+          container.innerHTML = `
+                        <div class="empty-state">
+                            <h3>${query ? "Sin resultados" : "No hay mensajes"}</h3>
+                            <p>${query ? "Probá con otro término" : "Inicia una conversación"}</p>
+                        </div>
+                    `;
+          if (searchMeta) searchMeta.textContent = query ? "0 resultados" : "";
+          return;
+        }
+
+        if (searchMeta) {
+          searchMeta.textContent = query ? `${messages.length} resultado(s)` : "";
+        }
+
+        container.innerHTML = "";
+        for (const msg of messages) {
+          const messageDiv = document.createElement("div");
+          messageDiv.className = msg.is_from_me
+            ? "message outgoing"
+            : "message incoming";
+
+          let content = "";
+          if (!msg.is_from_me) {
+            let senderDisplay = msg.sender_name || msg.sender_phone;
+
+            if (msg.sender_phone && msg.sender_phone.length <= 15) {
+              senderDisplay = `${msg.sender_name} (+${msg.sender_phone})`;
+            } else if (msg.sender_phone && msg.sender_phone.length > 15) {
+              senderDisplay = `${msg.sender_name} (🔒 LID: ${msg.sender_phone})`;
+            }
+
+            content += `<div class="message-sender">${escapeHtml(senderDisplay)}</div>`;
+          }
+          if (msg.content) {
+            content += `<div class="message-content">${highlightSearchTerm(
+              msg.content,
+              query
+            )}</div>`;
+          }
+          if (msg.media_type) {
+            if (msg.media_type === "image") {
+              content += `<div class="message-media" data-image-msg="${msg.id}" data-image-chat="${chatJID}">
+                  <span>🖼️ Imagen</span>
+                  <div class="message-image-loading" style="color:#8696a0;font-size:12px;margin-top:4px;">Cargando vista previa...</div>
+                </div>`;
+            } else {
+              content += `<div class="message-media">📎 ${escapeHtml(msg.media_type)}: ${escapeHtml(msg.filename || "")}</div>`;
+            }
+          }
+
+          const time = new Date(msg.timestamp);
+          const timeStr = formatTime(time);
+          content += `<div class="message-time">${timeStr}</div>`;
+
+          messageDiv.innerHTML = `<div class="message-bubble">${content}</div>`;
+          container.appendChild(messageDiv);
+
+          if (msg.media_type === "image") {
+            loadMessageImageThumb(msg.id, chatJID, messageDiv);
+          }
+        }
+
+        container.scrollTop = container.scrollHeight;
+      }
+
+      async function searchInCurrentChat() {
+        if (!currentChatJID) return;
+        const input = document.getElementById("chatMessagesSearch");
+        currentChatSearchQuery = (input?.value || "").trim();
+        await loadMessages(currentChatJID, currentChatSearchQuery);
+      }
+
+      async function clearChatMessageSearch() {
+        currentChatSearchQuery = "";
+        const input = document.getElementById("chatMessagesSearch");
+        const searchMeta = document.getElementById("chatMessagesSearchMeta");
+        if (input) input.value = "";
+        if (searchMeta) searchMeta.textContent = "";
+        if (currentChatJID) {
+          await loadMessages(currentChatJID);
         }
       }
 
@@ -4084,6 +5260,18 @@
 
       function closeChat() {
         currentChatJID = null;
+        currentChatSearchQuery = "";
+        document.getElementById("chatTitle").textContent = "Selecciona un chat";
+        const jidEl = document.getElementById("chatHeaderJID");
+        const copyBtn = document.getElementById("copyChatJIDBtn");
+        const searchBox = document.getElementById("messagesSearchBox");
+        const searchInput = document.getElementById("chatMessagesSearch");
+        const searchMeta = document.getElementById("chatMessagesSearchMeta");
+        if (jidEl) jidEl.textContent = "";
+        if (copyBtn) copyBtn.style.display = "none";
+        if (searchBox) searchBox.classList.remove("active");
+        if (searchInput) searchInput.value = "";
+        if (searchMeta) searchMeta.textContent = "";
         document.getElementById("messagesPanel").classList.remove("active");
       }
 
@@ -4202,8 +5390,8 @@
           showNotification("✅ Número asociado correctamente");
 
           // Actualizar mensajes si es necesario
-          if (currentChat) {
-            loadMessages(currentChat.jid);
+          if (currentChatJID) {
+            loadMessages(currentChatJID, currentChatSearchQuery);
           }
         } catch (error) {
           console.error("Error al guardar asociación:", error);
@@ -4275,6 +5463,11 @@
           
           document.getElementById('pendingCount').textContent = pendingMessages.length;
           
+          const textPending = stats.processable_text_count ?? 0;
+          const imagePending = stats.processable_image_count ?? 0;
+          document.getElementById('pendingTextCount').textContent = textPending;
+          document.getElementById('pendingImageCount').textContent = imagePending;
+          
           // Mostrar mensajes procesados con cantidad de cargas entre paréntesis
           const processedCount = stats.success_count || 0;
           const totalCargas = stats.total_cargas || 0;
@@ -4336,8 +5529,12 @@
           });
           
           // Agregar ALT al contenido para mostrarlo
-          const contentWithAlt = `${msg.content}\n\nALT: ${msg.real_phone}`;
-          const truncatedContent = truncate(contentWithAlt, 80);
+          const isImage = msg.media_type === 'image';
+          const displayContent = isImage
+            ? (msg.content ? msg.content : '[Imagen sin caption]') + (msg.extracted_text ? `\n\nOCR previo: ${msg.extracted_text}` : '')
+            : msg.content;
+          const contentWithAlt = `${displayContent}\n\nALT: ${msg.real_phone}`;
+          const truncatedContent = (isImage ? '🖼️ ' : '') + truncate(contentWithAlt, 80);
           
           // Formatear intentos
           const attempts = msg.processing_attempts || 0;
@@ -5856,7 +7053,9 @@
         await Promise.all([
           loadActiveConfig(),
           loadProviders(),
-          loadConfigs()
+          loadConfigs(),
+          loadActiveOCRConfig(),
+          loadOCRConfigs()
         ]);
       }
 
@@ -6322,6 +7521,471 @@
         } catch (error) {
           console.error("Error eliminando configuración:", error);
           showNotification('❌ Error eliminando configuración', 'error');
+        }
+      }
+
+      // ===== FUNCIONES PARA CONFIGURACIÓN OCR =====
+
+      async function loadActiveOCRConfig() {
+        try {
+          const activeConfig = await window.go.main.App.GetActiveOCRConfig();
+          const display = document.getElementById('activeOCRConfigDisplay');
+
+          if (!activeConfig) {
+            display.innerHTML = `
+              <div class="loading-spinner">
+                ⚠️ No hay configuración OCR activa. Agrega y activa una key para procesar imágenes.
+              </div>
+            `;
+            return;
+          }
+
+          display.innerHTML = `
+            <div class="config-item">
+              <div class="provider-badge" style="background: #7c4dff;">${activeConfig.provider_display}</div>
+              <div class="config-details">
+                <div class="config-name">${activeConfig.name}</div>
+                <div class="config-model">${activeConfig.model_display}</div>
+              </div>
+            </div>
+          `;
+        } catch (error) {
+          document.getElementById('activeOCRConfigDisplay').innerHTML = `
+            <div class="loading-spinner">⚠️ No hay configuración OCR activa</div>
+          `;
+        }
+      }
+
+      async function loadOCRConfigs() {
+        try {
+          ocrConfigsData = await window.go.main.App.GetOCRConfigs();
+          renderOCRConfigs();
+        } catch (error) {
+          console.error("Error cargando configuraciones OCR:", error);
+          showNotification('Error cargando configuraciones OCR', 'error');
+        }
+      }
+
+      function renderOCRConfigs() {
+        const container = document.getElementById('ocrConfigsList');
+
+        if (!ocrConfigsData || ocrConfigsData.length === 0) {
+          container.innerHTML = `
+            <div class="loading-spinner">
+              No hay configuraciones OCR. Haz clic en "➕ Agregar Key OCR" para comenzar.
+            </div>
+          `;
+          return;
+        }
+
+        container.innerHTML = '';
+        ocrConfigsData.forEach(config => {
+          const card = document.createElement('div');
+          card.className = `config-card ${config.is_active ? 'active-card' : ''} ${!config.is_enabled ? 'disabled-card' : ''}`;
+          card.innerHTML = `
+            <div class="config-card-left">
+              <div class="config-provider-badge" style="background: #7c4dff;">${config.provider_display}</div>
+              <div class="config-card-info">
+                <div class="config-card-name">${config.name}</div>
+                <div class="config-card-model">${config.model_display}</div>
+              </div>
+            </div>
+            <div class="config-card-stats">
+              <div class="config-stat">
+                <span class="config-stat-label">Errores</span>
+                <span class="config-stat-value ${config.error_count > 0 ? 'error' : ''}">${config.error_count}</span>
+              </div>
+            </div>
+            <div class="config-card-actions">
+              ${!config.is_active ? `<button class="btn-icon btn-success" onclick="activateOCRConfig(${config.id})" title="Activar">✓</button>` : ''}
+              <button class="btn-icon" onclick="testOCRConfig(${config.id})" title="Probar OCR">🧪</button>
+              ${config.error_count > 0 ? `<button class="btn-icon" onclick="resetOCRErrors(${config.id})" title="Resetear errores">🔄</button>` : ''}
+              <button class="btn-icon btn-danger" onclick="deleteOCRConfig(${config.id})" title="Eliminar">🗑️</button>
+            </div>
+          `;
+          container.appendChild(card);
+        });
+      }
+
+      async function fetchOCRProviders() {
+        if (window.go?.main?.App?.GetOCRProviders) {
+          try {
+            const providers = await window.go.main.App.GetOCRProviders();
+            if (providers && providers.length > 0) {
+              return providers;
+            }
+          } catch (error) {
+            console.warn("GetOCRProviders falló, usando fallback:", error);
+          }
+        }
+
+        const allProviders = await window.go.main.App.GetAIProviders();
+        const ocrProviderNames = new Set(["gemini", "ocrspace"]);
+        return (allProviders || []).filter(p => ocrProviderNames.has(p.name));
+      }
+
+      async function showAddOCRConfigModal() {
+        const modal = document.getElementById('addOCRConfigModal');
+        modal.classList.add('show');
+
+        const providerSelect = document.getElementById('ocrModalProvider');
+        providerSelect.innerHTML = '<option value="">Cargando proveedores...</option>';
+
+        try {
+          const providers = await fetchOCRProviders();
+          ocrProvidersData = providers;
+          providerSelect.innerHTML = '<option value="">Selecciona un proveedor...</option>';
+
+          if (!providers || providers.length === 0) {
+            providerSelect.innerHTML += '<option value="" disabled>No hay proveedores OCR disponibles</option>';
+            showNotification('No hay proveedores OCR. Reinicia la aplicación.', 'warning');
+            return;
+          }
+
+          providers.forEach(p => {
+            providerSelect.innerHTML += `<option value="${p.id}" data-name="${p.name}">${p.display_name}</option>`;
+          });
+          onOCRProviderChange();
+        } catch (error) {
+          console.error("Error cargando proveedores OCR:", error);
+          providerSelect.innerHTML = '<option value="">Error al cargar proveedores</option>';
+          showNotification('Error cargando proveedores OCR: ' + (error.message || error), 'error');
+        }
+      }
+
+      function getSelectedOCRProviderName() {
+        const select = document.getElementById('ocrModalProvider');
+        const option = select.options[select.selectedIndex];
+        return option ? option.getAttribute('data-name') || '' : '';
+      }
+
+      function onOCRProviderChange() {
+        const providerName = getSelectedOCRProviderName();
+        const isOCRSpace = providerName === 'ocrspace';
+        const hint = document.getElementById('ocrProviderHint');
+        const customGroup = document.getElementById('ocrCustomModelCheckboxGroup');
+        const modelLabel = document.getElementById('ocrModelSelectLabel');
+        const apiKeyInput = document.getElementById('ocrModalApiKey');
+        const nameInput = document.getElementById('ocrModalConfigName');
+
+        if (isOCRSpace) {
+          hint.style.display = 'block';
+          hint.textContent = 'Usa tu API key de ocr.space. Plan gratuito: ~500 requests/día, máx. 1 MB por imagen.';
+          customGroup.style.display = 'none';
+          document.getElementById('ocrCustomModelCheckbox').checked = false;
+          document.getElementById('ocrCustomModelGroup').style.display = 'none';
+          document.getElementById('ocrModelSelectGroup').style.display = 'block';
+          modelLabel.textContent = 'Motor OCR:';
+          apiKeyInput.placeholder = 'Tu API key de OCR.space';
+          if (!nameInput.value) nameInput.placeholder = 'Ej: Key OCR.space';
+        } else {
+          hint.style.display = 'none';
+          customGroup.style.display = 'block';
+          modelLabel.textContent = 'Modelo con visión:';
+          apiKeyInput.placeholder = 'Ingresa tu API Key';
+          nameInput.placeholder = 'Ej: Key OCR Gemini';
+        }
+
+        toggleOCRCustomModel();
+        loadVisionModelsForProvider();
+      }
+
+      function closeAddOCRConfigModal() {
+        document.getElementById('addOCRConfigModal').classList.remove('show');
+        document.getElementById('ocrModalProvider').value = '';
+        document.getElementById('ocrModalModel').value = '';
+        document.getElementById('ocrModalCustomModel').value = '';
+        document.getElementById('ocrModalApiKey').value = '';
+        document.getElementById('ocrModalConfigName').value = '';
+        document.getElementById('ocrCustomModelCheckbox').checked = false;
+        toggleOCRCustomModel();
+      }
+
+      function toggleOCRCustomModel() {
+        const isCustom = document.getElementById('ocrCustomModelCheckbox').checked;
+        const isOCRSpace = getSelectedOCRProviderName() === 'ocrspace';
+        document.getElementById('ocrModelSelectGroup').style.display = (isCustom && !isOCRSpace) ? 'none' : 'block';
+        document.getElementById('ocrCustomModelGroup').style.display = (isCustom && !isOCRSpace) ? 'block' : 'none';
+      }
+
+      async function loadVisionModelsForProvider() {
+        const providerID = parseInt(document.getElementById('ocrModalProvider').value);
+        const modelSelect = document.getElementById('ocrModalModel');
+
+        if (!providerID) {
+          modelSelect.innerHTML = '<option value="">Primero selecciona un proveedor...</option>';
+          return;
+        }
+
+        try {
+          const models = await window.go.main.App.GetVisionModelsByProvider(providerID);
+          modelSelect.innerHTML = '<option value="">Selecciona un modelo...</option>';
+          if (models.length === 0) {
+            modelSelect.innerHTML += '<option value="" disabled>No hay modelos OCR para este proveedor</option>';
+            return;
+          }
+          models.forEach(m => {
+            modelSelect.innerHTML += `<option value="${m.id}">${m.display_name}</option>`;
+          });
+          const defaultModel = models.find(m => m.is_default);
+          if (defaultModel) {
+            modelSelect.value = defaultModel.id;
+          }
+        } catch (error) {
+          console.error("Error cargando modelos OCR:", error);
+          showNotification('Error cargando modelos con visión', 'error');
+        }
+      }
+
+      async function saveNewOCRConfig() {
+        const providerID = parseInt(document.getElementById('ocrModalProvider').value);
+        const providerName = getSelectedOCRProviderName();
+        const isCustomModel = document.getElementById('ocrCustomModelCheckbox').checked && providerName !== 'ocrspace';
+        const apiKey = document.getElementById('ocrModalApiKey').value.trim();
+        const name = document.getElementById('ocrModalConfigName').value.trim();
+
+        try {
+          if (isCustomModel) {
+            const customModelName = document.getElementById('ocrModalCustomModel').value.trim();
+            if (!providerID || !customModelName || !apiKey || !name) {
+              showNotification('Por favor completa todos los campos', 'warning');
+              return;
+            }
+            await window.go.main.App.AddOCRConfigWithCustomModel(providerID, customModelName, apiKey, name);
+          } else {
+            const modelID = parseInt(document.getElementById('ocrModalModel').value);
+            if (!providerID || !modelID || !apiKey || !name) {
+              showNotification('Por favor completa todos los campos', 'warning');
+              return;
+            }
+            await window.go.main.App.AddOCRConfig(providerID, modelID, apiKey, name);
+          }
+
+          showNotification('✅ Configuración OCR agregada exitosamente', 'success');
+          closeAddOCRConfigModal();
+          await loadAIConfigPanel();
+        } catch (error) {
+          console.error("Error guardando configuración OCR:", error);
+          showNotification('❌ Error guardando configuración OCR: ' + error, 'error');
+        }
+      }
+
+      async function activateOCRConfig(configID) {
+        try {
+          await window.go.main.App.SetActiveOCRConfig(configID);
+          showNotification('✅ Configuración OCR activada', 'success');
+          await loadAIConfigPanel();
+        } catch (error) {
+          console.error("Error activando configuración OCR:", error);
+          showNotification('❌ Error activando configuración OCR', 'error');
+        }
+      }
+
+      async function testOCRConfig(configID) {
+        try {
+          showNotification('🧪 Probando configuración OCR...', 'info');
+          const result = await window.go.main.App.TestOCRConfig(configID);
+          if (result.success) {
+            showNotification(`✅ OCR OK (${result.provider} - ${result.model}) en ${result.elapsed.toFixed(1)}s`, 'success');
+          } else {
+            showNotification(`❌ Error OCR: ${result.error}`, 'error');
+          }
+        } catch (error) {
+          console.error("Error probando OCR:", error);
+          showNotification('❌ Error probando OCR: ' + error, 'error');
+        }
+      }
+
+      async function resetOCRErrors(configID) {
+        try {
+          await window.go.main.App.ResetOCRConfigErrors(configID);
+          showNotification('✅ Errores OCR reseteados', 'success');
+          await loadOCRConfigs();
+        } catch (error) {
+          console.error("Error reseteando errores OCR:", error);
+          showNotification('❌ Error reseteando errores OCR', 'error');
+        }
+      }
+
+      async function deleteOCRConfig(configID) {
+        if (!confirm('¿Estás seguro de eliminar esta configuración OCR?')) {
+          return;
+        }
+
+        try {
+          await window.go.main.App.DeleteOCRConfig(configID);
+          showNotification('✅ Configuración OCR eliminada', 'success');
+          await loadAIConfigPanel();
+        } catch (error) {
+          console.error("Error eliminando configuración OCR:", error);
+          showNotification('❌ Error eliminando configuración OCR', 'error');
+        }
+      }
+
+      // ===== FUNCIONES PARA AGENTE DE DESARROLLO =====
+
+      async function loadDevAgentDiagnostics() {
+        const el = document.getElementById('devAgentStatus');
+        try {
+          const d = await window.go.main.App.GetDevAgentDiagnostics();
+          let html = `<strong>Diagnóstico del agente</strong><br>`;
+          html += `Agente inicializado: ${d.agent_ready ? '✅' : '❌'}<br>`;
+          html += `WhatsApp conectado: ${d.whatsapp_connected ? '✅' : '❌'}<br>`;
+          html += `Habilitado: ${d.enabled ? '✅' : '❌'}<br>`;
+          html += `JID configurado: <code>${d.group_jid || '(vacío)'}</code><br>`;
+          html += `Trigger: <code>${d.trigger_prefix || '*'}</code><br>`;
+          html += `IA usada: ${d.active_ai_config || '(ninguna activa)'}<br>`;
+          if (d.ai_config_id > 0) html += `IA dedicada ID: ${d.ai_config_id}<br>`;
+          html += `<small style="color:#8696a0;">Si mandás * en el grupo, en los logs debe aparecer el JID recibido entre corchetes en "Nuevo mensaje..."</small>`;
+          el.innerHTML = html;
+        } catch (error) {
+          el.innerHTML = `<span style="color:#ff6b6b;">Error diagnóstico: ${error}</span>`;
+        }
+      }
+
+      function updateDevAgentStatus(cfg) {
+        const el = document.getElementById('devAgentStatus');
+        if (!el) return;
+        if (!cfg.enabled) {
+          el.innerHTML = '<span style="color:#ffb347;">⚠️ Agente deshabilitado — activá el checkbox y guardá</span>';
+          return;
+        }
+        if (!cfg.group_jid) {
+          el.innerHTML = '<span style="color:#ffb347;">⚠️ Falta configurar el JID del grupo</span>';
+          return;
+        }
+        el.innerHTML = `<span style="color:#25d366;">✅ Activo en grupo: ${cfg.group_jid}</span><br><small style="color:#8696a0;">WhatsApp debe estar conectado. Escribí en el grupo: ${cfg.trigger_prefix || '*'} tu mensaje</small>`;
+      }
+
+      async function loadDevAgentConfig() {
+        try {
+          const cfg = await window.go.main.App.GetDevAgentConfig();
+          document.getElementById('devAgentEnabled').checked = cfg.enabled;
+          document.getElementById('devAgentGroupJID').value = cfg.group_jid || '';
+          document.getElementById('devAgentContextMessages').value = cfg.context_messages || 30;
+          document.getElementById('devAgentTriggerPrefix').value = cfg.trigger_prefix || '*';
+          document.getElementById('devAgentAIConfigID').value = cfg.ai_config_id || '';
+          updateDevAgentStatus(cfg);
+          await loadDevAgentGroupOptions();
+          await loadDevAgentReminders();
+          await loadDevAgentDiagnostics();
+        } catch (error) {
+          console.error("Error cargando config del agente:", error);
+        }
+      }
+
+      async function enableDevAgentNow(enabled) {
+        try {
+          await window.go.main.App.EnableDevAgent(enabled);
+          document.getElementById('devAgentEnabled').checked = enabled;
+          showNotification(enabled ? '✅ Agente activado' : '⏸️ Agente desactivado', 'success');
+          await loadDevAgentDiagnostics();
+        } catch (error) {
+          console.error("Error cambiando estado del agente:", error);
+          showNotification('❌ Error: ' + error, 'error');
+        }
+      }
+
+      async function saveDevAgentConfig() {
+        try {
+          const enabled = document.getElementById('devAgentEnabled').checked;
+          const groupJID = document.getElementById('devAgentGroupJID').value.trim();
+          const contextMessages = parseInt(document.getElementById('devAgentContextMessages').value, 10) || 30;
+          const triggerPrefix = document.getElementById('devAgentTriggerPrefix').value || '*';
+          const aiConfigID = parseInt(document.getElementById('devAgentAIConfigID').value, 10) || 0;
+
+          if (enabled && !groupJID) {
+            showNotification('⚠️ Configurá el JID del grupo antes de activar', 'warning');
+            return;
+          }
+          await window.go.main.App.SetDevAgentConfig(enabled, groupJID, contextMessages, triggerPrefix, aiConfigID);
+          updateDevAgentStatus({ enabled, group_jid: groupJID, trigger_prefix: triggerPrefix });
+          showNotification(`✅ Guardado (enabled=${enabled})`, 'success');
+          await loadDevAgentDiagnostics();
+        } catch (error) {
+          console.error("Error guardando config del agente:", error);
+          showNotification('❌ Error guardando configuración del agente', 'error');
+        }
+      }
+
+      async function loadDevAgentReminders() {
+        const container = document.getElementById('devAgentRemindersList');
+        if (!container) return;
+
+        try {
+          const reminders = await window.go.main.App.GetDevAgentReminders('pending');
+          if (!reminders || reminders.length === 0) {
+            container.innerHTML = '<p style="color: #8696a0;">No hay recordatorios pendientes</p>';
+            return;
+          }
+
+          container.innerHTML = reminders.map(r => {
+            const due = r.due_at ? new Date(r.due_at).toLocaleString('es-AR') : 'sin fecha';
+            return `
+              <div class="status-card" style="margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <strong>#${r.id}</strong> ${r.content}<br>
+                  <small style="color: #8696a0;">${r.creator_name || 'Desconocido'} · ${due}</small>
+                </div>
+                <button class="btn-secondary" onclick="markDevReminderDone(${r.id})">✅ Hecho</button>
+              </div>
+            `;
+          }).join('');
+        } catch (error) {
+          console.error("Error cargando recordatorios:", error);
+          container.innerHTML = '<p style="color: #ff6b6b;">Error cargando recordatorios</p>';
+        }
+      }
+
+      async function markDevReminderDone(id) {
+        try {
+          await window.go.main.App.MarkDevReminderDone(id);
+          showNotification('✅ Recordatorio marcado como hecho', 'success');
+          await loadDevAgentReminders();
+        } catch (error) {
+          console.error("Error marcando recordatorio:", error);
+          showNotification('❌ Error marcando recordatorio', 'error');
+        }
+      }
+
+      async function testDevAgent() {
+        const message = document.getElementById('devAgentTestMessage').value.trim();
+        const resultEl = document.getElementById('devAgentTestResult');
+        if (!message) {
+          showNotification('Escribí un mensaje de prueba (debe empezar con *)', 'warning');
+          return;
+        }
+
+        resultEl.innerHTML = '<p style="color: #8696a0;">Procesando...</p>';
+        try {
+          const response = await window.go.main.App.TestDevAgent(message);
+          resultEl.innerHTML = `<pre style="white-space: pre-wrap; color: #e9edef;">${response}</pre>`;
+        } catch (error) {
+          console.error("Error probando agente:", error);
+          resultEl.innerHTML = `<p style="color: #ff6b6b;">Error: ${error}</p>`;
+        }
+      }
+
+      async function loadMessageBlacklist() {
+        try {
+          const cfg = await window.go.main.App.GetMessageBlacklistConfig();
+          document.getElementById('messageBlacklistEnabled').checked = cfg.enabled;
+          document.getElementById('messageBlacklistWords').value = (cfg.words || []).join('\n');
+        } catch (error) {
+          console.error("Error cargando blacklist:", error);
+        }
+      }
+
+      async function saveMessageBlacklist() {
+        try {
+          const enabled = document.getElementById('messageBlacklistEnabled').checked;
+          const wordsInput = document.getElementById('messageBlacklistWords').value;
+          await window.go.main.App.SetMessageBlacklistConfig(enabled, wordsInput);
+          showNotification(`Blacklist guardada (activa=${enabled})`, 'success');
+          await loadMessageBlacklist();
+        } catch (error) {
+          console.error("Error guardando blacklist:", error);
+          showNotification('Error guardando blacklist', 'error');
         }
       }
 

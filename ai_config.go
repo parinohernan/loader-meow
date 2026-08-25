@@ -32,7 +32,7 @@ func GetAIConfig(keysManager *APIKeysManager) *AIConfig {
 	
 	return &AIConfig{
 		APIKey:      apiKey,
-		Model:       getEnvAI("GEMINI_MODEL", "gemini-2.0-flash-exp"),
+		Model:       getEnvAI("GEMINI_MODEL", "gemini-2.5-flash"),
 		Temperature: float32(temperature),
 		MaxTokens:   maxTokens,
 		KeysManager: keysManager,
